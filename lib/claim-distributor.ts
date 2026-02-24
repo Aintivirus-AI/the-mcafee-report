@@ -36,6 +36,8 @@ import {
   getLastVolumeSnapshot,
   saveVolumeSnapshot,
   getTokenById,
+  getSubmissionById,
+  recordEarning,
 } from "./db";
 import type { Token } from "./types";
 
@@ -455,6 +457,23 @@ export async function distributeBulkClaim(
           `[ClaimDistributor] Paid ${share.submitterLamports / LAMPORTS_PER_SOL} SOL ` +
           `to ${share.deployerSolAddress.slice(0, 8)}… (tx: ${result.signature?.slice(0, 12)}…)`
         );
+
+        const paidToken = tokens.find((t) => t.id === share.tokenId);
+        if (paidToken?.submission_id) {
+          const submission = getSubmissionById(paidToken.submission_id);
+          if (submission) {
+            recordEarning({
+              telegramUserId: submission.telegram_user_id,
+              telegramUsername: submission.telegram_username ?? null,
+              solAddress: submission.sol_address,
+              amountLamports: share.submitterLamports,
+              source: "claim_allocation",
+              sourceId: allocation.id,
+              tokenTicker: paidToken.ticker,
+              txSignature: result.signature,
+            });
+          }
+        }
       } else {
         console.error(`[ClaimDistributor] Payment failed for token #${share.tokenId}: ${result.error}`);
         updateClaimAllocationStatus(allocation.id, "failed");

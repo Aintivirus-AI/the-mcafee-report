@@ -10,9 +10,11 @@ import {
 import {
   createRevenueEvent,
   getTokenById,
+  getSubmissionById,
   updateRevenueEventStatus,
   getPendingRevenueEvents,
   getRevenueStats,
+  recordEarning,
 } from "./db";
 import type { RevenueEvent, Token } from "./types";
 
@@ -92,6 +94,22 @@ async function distributeRevenue(
       submitterTxSignature = submitterResult.signature;
       updateRevenueEventStatus(event.id, "submitter_paid", submitterTxSignature);
       console.log(`[Revenue] Submitter paid: ${submitterTxSignature}`);
+
+      if (token.submission_id) {
+        const submission = getSubmissionById(token.submission_id);
+        if (submission) {
+          recordEarning({
+            telegramUserId: submission.telegram_user_id,
+            telegramUsername: submission.telegram_username ?? null,
+            solAddress: submission.sol_address,
+            amountLamports: submitterShare,
+            source: "revenue_event",
+            sourceId: event.id,
+            tokenTicker: token.ticker,
+            txSignature: submitterTxSignature,
+          });
+        }
+      }
     } else {
       console.error(`[Revenue] Failed to pay submitter: ${submitterResult.error}`);
       updateRevenueEventStatus(event.id, "failed");

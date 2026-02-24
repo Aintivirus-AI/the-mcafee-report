@@ -52,10 +52,11 @@ import {
   tickerExists,
 } from "../lib/db";
 import { generateMcAfeeTake, scoreHeadlineImportance, generateCoinSummary } from "../lib/mcafee-commentator";
+import { saveImageBuffer, isValidRasterImage, moderateImage } from "../lib/image-store";
 
 // Session data interface
 interface SessionData {
-  step: "idle" | "awaiting_url" | "awaiting_headline_choice" | "awaiting_image_choice" | "awaiting_column" | "awaiting_main_url" | "awaiting_main_headline_choice" | "awaiting_main_image_choice" | "awaiting_main_subtitle" | "awaiting_submit_url" | "awaiting_sol_address" | "awaiting_token_name" | "awaiting_cotd_url" | "awaiting_cotd_headline_choice" | "awaiting_cotd_image_choice" | "awaiting_cotd_description";
+  step: "idle" | "awaiting_url" | "awaiting_headline_choice" | "awaiting_image_choice" | "awaiting_column" | "awaiting_main_url" | "awaiting_main_headline_choice" | "awaiting_main_image_choice" | "awaiting_main_subtitle" | "awaiting_submit_url" | "awaiting_sol_address" | "awaiting_token_name" | "awaiting_custom_image" | "awaiting_memeify_choice" | "awaiting_cotd_url" | "awaiting_cotd_headline_choice" | "awaiting_cotd_image_choice" | "awaiting_cotd_description";
   pendingUrl?: string;
   pendingTitle?: string;
   pendingColumn?: "left" | "right";
@@ -65,6 +66,8 @@ interface SessionData {
   pendingSolAddress?: string;
   pendingTokenName?: string;
   pendingTicker?: string;
+  pendingCustomImagePath?: string;
+  pendingMemeifyImage?: boolean;
   pendingPageContent?: { title: string; description: string; content: string; imageUrl: string | null };
 }
 
@@ -645,6 +648,8 @@ function resetSession(session: SessionData) {
   session.pendingSolAddress = undefined;
   session.pendingTokenName = undefined;
   session.pendingTicker = undefined;
+  session.pendingCustomImagePath = undefined;
+  session.pendingMemeifyImage = undefined;
 }
 
 async function finalizeSubmission(ctx: MyContext, userId: number, session: SessionData) {
@@ -657,13 +662,18 @@ async function finalizeSubmission(ctx: MyContext, userId: number, session: Sessi
       contentType,
       ctx.from?.username,
       session.pendingTokenName,
-      session.pendingTicker
+      session.pendingTicker,
+      session.pendingCustomImagePath,
+      session.pendingMemeifyImage
     );
 
     const walletShort = `${session.pendingSolAddress!.substring(0, 6)}...${session.pendingSolAddress!.substring(session.pendingSolAddress!.length - 4)}`;
     const tokenLine = session.pendingTokenName && session.pendingTicker
       ? `Token: \`${session.pendingTokenName}\` \\($${session.pendingTicker}\\)\n`
       : `Token: _AI will generate_\n`;
+    const imageLine = session.pendingCustomImagePath
+      ? `Image: _Custom${session.pendingMemeifyImage ? " \\(will be meme\\-ified\\)" : ""}_\n`
+      : `Image: _AI will generate_\n`;
 
     await ctx.reply(
       `*Submission Received*\n` +
@@ -671,7 +681,8 @@ async function finalizeSubmission(ctx: MyContext, userId: number, session: Sessi
       `ID: \`#${submission.id}\`\n` +
       `URL: \`${session.pendingUrl!.substring(0, 40)}${session.pendingUrl!.length > 40 ? "\\.\\.\\." : ""}\`\n` +
       `Wallet: \`${walletShort}\`\n` +
-      tokenLine + `\n` +
+      tokenLine +
+      imageLine + `\n` +
       `AI is reviewing your submission now\\.\n` +
       `You'll be notified here when it's approved or rejected\\.\n\n` +
       `*If approved:*\n` +
@@ -687,6 +698,9 @@ async function finalizeSubmission(ctx: MyContext, userId: number, session: Sessi
         const tokenInfo = session.pendingTokenName && session.pendingTicker
           ? `Token: ${session.pendingTokenName} ($${session.pendingTicker})\n`
           : "";
+        const imageInfo = session.pendingCustomImagePath
+          ? `Image: Custom${session.pendingMemeifyImage ? " (meme-ify)" : " (as-is)"}\n`
+          : "";
         await bot.api.sendMessage(
           adminId,
           `*New Submission*\n\n` +
@@ -694,7 +708,8 @@ async function finalizeSubmission(ctx: MyContext, userId: number, session: Sessi
           `From: ${ctx.from?.username ? `@${ctx.from.username}` : userId}\n` +
           `Type: ${contentTypeLabel(contentType)}\n` +
           `URL: \`${session.pendingUrl!.substring(0, 50)}...\`\n` +
-          tokenInfo,
+          tokenInfo +
+          imageInfo,
           { parse_mode: "Markdown" }
         );
       } catch {
@@ -967,9 +982,10 @@ bot.command("submit", async (ctx) => {
     `1. Send a URL (article, tweet, YouTube, TikTok)\n` +
     `2. Provide your Solana wallet address\n` +
     `3. Name your token (or let AI pick)\n` +
-    `4. AI reviews your submission\n` +
-    `5. If approved, a token launches on pump.fun\n` +
-    `6. You receive 50% of creator fees\n\n` +
+    `4. Send a logo image (or let AI create one)\n` +
+    `5. AI reviews your submission\n` +
+    `6. If approved, a token launches on pump.fun\n` +
+    `7. You receive 50% of creator fees\n\n` +
     `*Rules:*\n` +
     `- Must be real, verifiable news\n` +
     `- Must be recent (under 24 hours old)\n` +
@@ -1299,6 +1315,84 @@ bot.command("visits", async (ctx) => {
 });
 
 // ============================================================
+//  PHOTO HANDLER (custom token image upload)
+// ============================================================
+
+bot.on("message:photo", async (ctx) => {
+  const userId = ctx.from?.id;
+  if (!userId) return;
+
+  const session = ctx.session;
+  if (session.step !== "awaiting_custom_image") return;
+
+  try {
+    await ctx.reply("Processing your image...");
+
+    // Grab the largest photo size (last in the array)
+    const photos = ctx.message.photo;
+    const largest = photos[photos.length - 1];
+
+    const file = await ctx.api.getFile(largest.file_id);
+    if (!file.file_path) {
+      await ctx.reply("Failed to download the image. Try sending it again, or /skip.");
+      return;
+    }
+
+    const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      await ctx.reply("Failed to download the image. Try again, or /skip.");
+      return;
+    }
+
+    const imageBuffer = Buffer.from(await response.arrayBuffer());
+
+    if (imageBuffer.length > 10 * 1024 * 1024) {
+      await ctx.reply("Image too large (max 10 MB). Send a smaller photo, or /skip.");
+      return;
+    }
+
+    if (!isValidRasterImage(imageBuffer)) {
+      await ctx.reply("Invalid image format. Send a PNG, JPEG, GIF, or WebP photo, or /skip.");
+      return;
+    }
+
+    // Screen for NSFW / policy violations via OpenAI moderation
+    const imageBase64 = imageBuffer.toString("base64");
+    const moderation = await moderateImage(imageBase64);
+
+    if (!moderation.safe) {
+      const categories = moderation.flaggedCategories.join(", ");
+      await ctx.reply(
+        `Image rejected (policy violation: ${categories}).\n\nSend a different photo, or /skip.`
+      );
+      return;
+    }
+
+    // Save to /public/tokens/
+    const identifier = `user-${userId}-${Date.now()}`;
+    const localPath = saveImageBuffer(imageBuffer, identifier);
+    session.pendingCustomImagePath = localPath;
+
+    // Ask: use as-is or meme-ify?
+    session.step = "awaiting_memeify_choice";
+    const keyboard = new InlineKeyboard()
+      .text("Use as-is", "memeify_no")
+      .text("Meme-ify it", "memeify_yes");
+
+    await ctx.reply(
+      "Image received! How should we use it?\n\n" +
+      "*Use as-is* — your image becomes the token logo directly\n" +
+      "*Meme-ify it* — AI deep-fries it into meme coin energy",
+      { parse_mode: "Markdown", reply_markup: keyboard }
+    );
+  } catch (error) {
+    console.error("[Bot] Photo upload error:", error);
+    await ctx.reply("Something went wrong processing your image. Try again, or /skip.");
+  }
+});
+
+// ============================================================
 //  MESSAGE HANDLER (interactive flows)
 // ============================================================
 
@@ -1393,7 +1487,14 @@ bot.on("message:text", async (ctx) => {
 
     if (trimmed.toLowerCase() === "/skip" || trimmed.toLowerCase() === "skip") {
       // No custom name — AI will generate
-      await finalizeSubmission(ctx, userId, session);
+      session.step = "awaiting_custom_image";
+      await ctx.reply(
+        `*Token Logo \\(Optional\\)*\n` +
+        `─────────────────────\n\n` +
+        `Send a photo for your token logo\\.\n\n` +
+        `Or send /skip to let AI create one\\.`,
+        { parse_mode: "MarkdownV2" }
+      );
       return;
     }
 
@@ -1434,7 +1535,26 @@ bot.on("message:text", async (ctx) => {
 
     session.pendingTokenName = rawName;
     session.pendingTicker = rawTicker;
-    await finalizeSubmission(ctx, userId, session);
+    session.step = "awaiting_custom_image";
+    await ctx.reply(
+      `*Token Logo \\(Optional\\)*\n` +
+      `─────────────────────\n\n` +
+      `Send a photo for your token logo\\.\n\n` +
+      `Or send /skip to let AI create one\\.`,
+      { parse_mode: "MarkdownV2" }
+    );
+    return;
+  }
+
+  if (session.step === "awaiting_custom_image") {
+    if (text.toLowerCase() === "/skip" || text.toLowerCase() === "skip") {
+      await finalizeSubmission(ctx, userId, session);
+      return;
+    }
+    await ctx.reply(
+      "Send a *photo* directly, or /skip to let AI create the logo.",
+      { parse_mode: "Markdown" }
+    );
     return;
   }
 
@@ -1919,6 +2039,16 @@ bot.on("message:text", async (ctx) => {
 bot.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data;
   const session = ctx.session;
+
+  // Meme-ify choice — part of public submission flow, no auth required
+  if ((data === "memeify_yes" || data === "memeify_no") && session.step === "awaiting_memeify_choice") {
+    session.pendingMemeifyImage = data === "memeify_yes";
+    const label = data === "memeify_yes" ? "Meme-ified" : "As-is";
+    await ctx.editMessageText(`Image style: ${label}`);
+    await ctx.answerCallbackQuery();
+    await finalizeSubmission(ctx, ctx.from!.id, session);
+    return;
+  }
 
   if (!ctx.from || !isAuthorized(ctx.from.id)) {
     await ctx.answerCallbackQuery({ text: "Not authorized." });

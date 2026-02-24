@@ -13,6 +13,8 @@
  */
 
 import OpenAI, { toFile } from "openai";
+import fs from "fs";
+import path from "path";
 import { tickerExists } from "./db";
 import { saveImageBuffer } from "./image-store";
 import type { TokenMetadata, PageContent } from "./types";
@@ -40,7 +42,7 @@ const MAX_IMAGE_DOWNLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 export async function generateTokenMetadata(
   headline: string,
   content: PageContent,
-  overrides?: { name?: string; ticker?: string }
+  overrides?: { name?: string; ticker?: string; imageUrl?: string; memeifyImage?: boolean }
 ): Promise<TokenMetadata> {
   console.log(`[TokenGenerator] Headline: "${headline}"`);
 
@@ -49,11 +51,18 @@ export async function generateTokenMetadata(
     console.log(`[TokenGenerator] Using custom name/ticker: "${overrides.name}" ($${overrides.ticker})`);
   }
 
+  const hasCustomImage = !!overrides?.imageUrl;
+  if (hasCustomImage) {
+    console.log(`[TokenGenerator] Using custom image: "${overrides!.imageUrl}" (memeify: ${overrides!.memeifyImage})`);
+  }
+
   const [nameAndTicker, imageUrl, bannerUrl, description] = await Promise.all([
     hasCustomNameAndTicker
       ? Promise.resolve({ name: overrides.name!, ticker: overrides.ticker! })
       : generateNameAndTicker(headline, content),
-    generateTokenLogo(headline, content),
+    hasCustomImage
+      ? resolveCustomImage(headline, overrides!.imageUrl!, !!overrides!.memeifyImage)
+      : generateTokenLogo(headline, content),
     generateTokenBanner(headline, content),
     generateTokenDescription(headline, content),
   ]);
@@ -206,6 +215,96 @@ function generateFallbackTicker(text: string): string {
 // ═══════════════════════════════════════════════════════════════════════════
 // IMAGE GENERATION — meme-ify real images, raw AI fallback
 // ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Resolve a user-supplied custom image: either return it as-is or meme-ify it.
+ */
+async function resolveCustomImage(headline: string, localPath: string, memeify: boolean): Promise<string> {
+  if (!memeify) {
+    console.log(`[TokenGenerator] Using custom image as-is: ${localPath}`);
+    return localPath;
+  }
+
+  try {
+    const memeified = await memeifyLocalImage(headline, localPath);
+    if (memeified) return memeified;
+  } catch (error) {
+    console.warn(`[TokenGenerator] Meme-ify of custom image failed, using as-is:`, error);
+  }
+
+  return localPath;
+}
+
+/**
+ * Meme-ify a locally stored image via openai.images.edit().
+ * Reads the image from disk instead of downloading from a URL.
+ */
+async function memeifyLocalImage(headline: string, localPath: string): Promise<string | null> {
+  console.log(`[TokenGenerator] Meme-ifying local image: ${localPath}`);
+
+  const filePath = localPath.startsWith("/tokens/")
+    ? path.join(process.cwd(), "public", localPath)
+    : localPath;
+
+  let imageBuffer: Buffer;
+  try {
+    imageBuffer = fs.readFileSync(filePath);
+    if (imageBuffer.length < 1000) {
+      throw new Error(`Image too small (${imageBuffer.length} bytes)`);
+    }
+    console.log(`[TokenGenerator] Read local image: ${imageBuffer.length} bytes`);
+  } catch (error) {
+    console.warn(`[TokenGenerator] Failed to read local image:`, error);
+    return null;
+  }
+
+  const safeHeadline = sanitizeForPrompt(headline, 100);
+
+  const editPrompt = `Take this image and turn it into a viral pump.fun memecoin profile picture.
+
+Rules:
+- Keep the core subject recognizable but make it feel like a MEME
+- Exaggerate expressions, proportions, or colors
+- Add surreal or absurd elements — laser eyes, distortion, deep-fried oversaturated look, weird crops, glow effects
+- If there's a person, exaggerate their features into a caricature
+- If it's an object or scene, make it feel unhinged and slightly wrong
+- Make it eye-catching when shrunk to a 48x48 pixel thumbnail
+- The vibe: a degen edited this photo at 3am before launching a coin on pump.fun
+- ZERO text, words, or letters anywhere in the image
+
+The news headline: "${safeHeadline}"`;
+
+  try {
+    const imageFile = await toFile(imageBuffer, "custom.png", { type: "image/png" });
+
+    const response = await openai.images.edit({
+      model: "gpt-image-1",
+      image: imageFile,
+      prompt: editPrompt,
+      size: "1024x1024",
+      quality: "medium",
+    });
+
+    const resultBase64 = response.data?.[0]?.b64_json;
+    if (!resultBase64) {
+      throw new Error("No image data in edit response");
+    }
+
+    const resultBuffer = Buffer.from(resultBase64, "base64");
+    const slug = safeHeadline
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .substring(0, 20)
+      .replace(/-$/, "");
+    const savedPath = saveImageBuffer(resultBuffer, `${slug || "meme"}-custom-edit`);
+
+    console.log(`[TokenGenerator] Meme-ified custom image saved: ${savedPath}`);
+    return savedPath;
+  } catch (error) {
+    console.error("[TokenGenerator] Custom image meme-ify failed:", error);
+    return null;
+  }
+}
 
 /**
  * Generate the token logo image.

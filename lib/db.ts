@@ -246,6 +246,22 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_page_views_created_at ON page_views(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_page_views_path ON page_views(page_path);
+
+  -- Append-only earnings ledger (survives headline/token deletion)
+  CREATE TABLE IF NOT EXISTS earnings_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    telegram_user_id TEXT NOT NULL,
+    telegram_username TEXT,
+    sol_address TEXT NOT NULL,
+    amount_lamports INTEGER NOT NULL,
+    source TEXT NOT NULL CHECK(source IN ('revenue_event', 'claim_allocation')),
+    source_id INTEGER NOT NULL,
+    token_ticker TEXT,
+    tx_signature TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_earnings_ledger_user ON earnings_ledger(telegram_user_id);
+  CREATE INDEX IF NOT EXISTS idx_earnings_ledger_created ON earnings_ledger(created_at);
 `);
 
 // Migration: Add image_url column if it doesn't exist
@@ -322,11 +338,55 @@ try {
   // Column already exists
 }
 
+// Migration: Add custom image fields to submissions
+try {
+  db.exec(`ALTER TABLE submissions ADD COLUMN custom_image_url TEXT`);
+} catch {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE submissions ADD COLUMN memeify_image INTEGER DEFAULT 0`);
+} catch {
+  // Column already exists
+}
+
 // Migration: dedup index for page_views (expression index, safe to retry)
 try {
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_page_views_dedup ON page_views(page_path, visitor_hash, date(created_at))`);
 } catch {
   // Index already exists or table not yet created
+}
+
+// Migration: Backfill earnings_ledger from existing revenue_events and claim_allocations
+try {
+  const ledgerCount = (db.prepare(`SELECT COUNT(*) as c FROM earnings_ledger`).get() as { c: number }).c;
+  if (ledgerCount === 0) {
+    db.exec(`
+      INSERT INTO earnings_ledger (telegram_user_id, telegram_username, sol_address, amount_lamports, source, source_id, token_ticker, tx_signature, created_at)
+      SELECT s.telegram_user_id, s.telegram_username, s.sol_address,
+             re.submitter_share_lamports, 'revenue_event', re.id, t.ticker, re.submitter_tx_signature, re.created_at
+      FROM revenue_events re
+      JOIN tokens t ON re.token_id = t.id
+      JOIN submissions s ON t.submission_id = s.id
+      WHERE re.status IN ('submitter_paid', 'completed')
+    `);
+    db.exec(`
+      INSERT INTO earnings_ledger (telegram_user_id, telegram_username, sol_address, amount_lamports, source, source_id, token_ticker, tx_signature, created_at)
+      SELECT s.telegram_user_id, s.telegram_username, s.sol_address,
+             ca.submitter_lamports, 'claim_allocation', ca.id, t.ticker, ca.submitter_tx_signature, ca.created_at
+      FROM claim_allocations ca
+      JOIN claim_batches cb ON ca.batch_id = cb.id
+      JOIN tokens t ON ca.token_id = t.id
+      JOIN submissions s ON t.submission_id = s.id
+      WHERE ca.status = 'paid' AND cb.status = 'completed'
+    `);
+    const backfilled = (db.prepare(`SELECT COUNT(*) as c FROM earnings_ledger`).get() as { c: number }).c;
+    if (backfilled > 0) {
+      console.log(`[DB] Backfilled ${backfilled} record(s) into earnings_ledger`);
+    }
+  }
+} catch {
+  // Tables may not have matching data yet
 }
 
 // Insert default main headline if none exists
@@ -505,12 +565,17 @@ export function addHeadline(
  */
 export function removeHeadline(id: number): boolean {
   const txn = db.transaction(() => {
+    // Delete comments referencing this headline
+    db.prepare("DELETE FROM comments WHERE headline_id = ?").run(id);
+
     // Delete votes referencing this headline
     db.prepare("DELETE FROM votes WHERE headline_id = ?").run(id);
 
-    // Find tokens linked to this headline and clean up their revenue events
+    // Find tokens linked to this headline and clean up all child records
     const tokens = db.prepare("SELECT id FROM tokens WHERE headline_id = ?").all(id) as { id: number }[];
     for (const token of tokens) {
+      db.prepare("DELETE FROM claim_allocations WHERE token_id = ?").run(token.id);
+      db.prepare("DELETE FROM token_volume_snapshots WHERE token_id = ?").run(token.id);
       db.prepare("DELETE FROM revenue_events WHERE token_id = ?").run(token.id);
     }
 
@@ -752,14 +817,16 @@ export function createSubmission(
   contentType: ContentType = "other",
   telegramUsername?: string,
   customTokenName?: string,
-  customTicker?: string
+  customTicker?: string,
+  customImageUrl?: string,
+  memeifyImage?: boolean
 ): Submission {
   const stmt = db.prepare(`
-    INSERT INTO submissions (telegram_user_id, telegram_username, sol_address, url, content_type, custom_token_name, custom_ticker)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO submissions (telegram_user_id, telegram_username, sol_address, url, content_type, custom_token_name, custom_ticker, custom_image_url, memeify_image)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     RETURNING *
   `);
-  return stmt.get(telegramUserId, telegramUsername || null, solAddress, url, contentType, customTokenName || null, customTicker || null) as Submission;
+  return stmt.get(telegramUserId, telegramUsername || null, solAddress, url, contentType, customTokenName || null, customTicker || null, customImageUrl || null, memeifyImage ? 1 : 0) as Submission;
 }
 
 /**
@@ -1986,6 +2053,37 @@ export function setSetting(key: string, value: string): void {
   `).run(key, value);
 }
 
+// ============= EARNINGS LEDGER =============
+
+/**
+ * Record a finalized earning in the append-only ledger.
+ * This persists even when headlines/tokens are later cleaned up.
+ */
+export function recordEarning(params: {
+  telegramUserId: string;
+  telegramUsername: string | null;
+  solAddress: string;
+  amountLamports: number;
+  source: "revenue_event" | "claim_allocation";
+  sourceId: number;
+  tokenTicker?: string;
+  txSignature?: string;
+}): void {
+  db.prepare(`
+    INSERT INTO earnings_ledger (telegram_user_id, telegram_username, sol_address, amount_lamports, source, source_id, token_ticker, tx_signature)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    params.telegramUserId,
+    params.telegramUsername,
+    params.solAddress,
+    params.amountLamports,
+    params.source,
+    params.sourceId,
+    params.tokenTicker ?? null,
+    params.txSignature ?? null,
+  );
+}
+
 // ============= TOP EARNERS =============
 
 export interface TopEarner {
@@ -1998,22 +2096,17 @@ export interface TopEarner {
 
 /**
  * Get top earners by SOL earned, with an optional time period filter.
- * Combines both revenue_events (individual distributions) and
- * claim_allocations (bulk pump.fun claim distributions).
+ * Reads from the append-only earnings_ledger — immune to headline/token deletion.
  * @param period - 'day' | 'week' | 'month' | 'all'
  */
 export function getTopEarners(period: string = "all", limit: number = 15): TopEarner[] {
-  let reDateFilter = "";
-  let caDateFilter = "";
+  let dateFilter = "";
   if (period === "day") {
-    reDateFilter = "AND re.created_at >= datetime('now', '-1 day')";
-    caDateFilter = "AND ca.created_at >= datetime('now', '-1 day')";
+    dateFilter = "WHERE created_at >= datetime('now', '-1 day')";
   } else if (period === "week") {
-    reDateFilter = "AND re.created_at >= datetime('now', '-7 days')";
-    caDateFilter = "AND ca.created_at >= datetime('now', '-7 days')";
+    dateFilter = "WHERE created_at >= datetime('now', '-7 days')";
   } else if (period === "month") {
-    reDateFilter = "AND re.created_at >= datetime('now', '-30 days')";
-    caDateFilter = "AND ca.created_at >= datetime('now', '-30 days')";
+    dateFilter = "WHERE created_at >= datetime('now', '-30 days')";
   }
 
   const stmt = db.prepare(`
@@ -2021,39 +2114,10 @@ export function getTopEarners(period: string = "all", limit: number = 15): TopEa
       telegram_username,
       telegram_user_id,
       sol_address,
-      SUM(earned_lamports) as total_earned_lamports,
-      SUM(event_count) as revenue_events_count
-    FROM (
-      -- Revenue events (individual token distributions)
-      SELECT
-        s.telegram_username,
-        s.telegram_user_id,
-        s.sol_address,
-        re.submitter_share_lamports as earned_lamports,
-        1 as event_count
-      FROM revenue_events re
-      JOIN tokens t ON re.token_id = t.id
-      JOIN submissions s ON t.submission_id = s.id
-      WHERE re.status IN ('submitter_paid', 'completed')
-        ${reDateFilter}
-
-      UNION ALL
-
-      -- Claim allocations (bulk pump.fun claim distributions)
-      SELECT
-        s.telegram_username,
-        s.telegram_user_id,
-        s.sol_address,
-        ca.submitter_lamports as earned_lamports,
-        1 as event_count
-      FROM claim_allocations ca
-      JOIN claim_batches cb ON ca.batch_id = cb.id
-      JOIN tokens t ON ca.token_id = t.id
-      JOIN submissions s ON t.submission_id = s.id
-      WHERE ca.status = 'paid'
-        AND cb.status = 'completed'
-        ${caDateFilter}
-    ) combined
+      SUM(amount_lamports) as total_earned_lamports,
+      COUNT(*) as revenue_events_count
+    FROM earnings_ledger
+    ${dateFilter}
     GROUP BY telegram_user_id
     ORDER BY total_earned_lamports DESC
     LIMIT ?

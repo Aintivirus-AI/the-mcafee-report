@@ -14,6 +14,7 @@
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import OpenAI from "openai";
 import { safeFetch } from "./url-validator";
 
 const IMAGE_DIR = path.join(process.cwd(), "public", "tokens");
@@ -121,7 +122,7 @@ export async function persistImage(
  * Check if a buffer contains valid RASTER image data (PNG, JPEG, GIF, WebP).
  * SVG is explicitly rejected because it can contain JavaScript (stored XSS).
  */
-function isValidRasterImage(buffer: Buffer): boolean {
+export function isValidRasterImage(buffer: Buffer): boolean {
   if (buffer.length < 4) return false;
 
   // PNG: 89 50 4E 47
@@ -173,4 +174,32 @@ export function getImagePublicUrl(imagePath: string): string {
   const siteUrl =
     process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
   return `${siteUrl}${imagePath}`;
+}
+
+/**
+ * Screen an image for policy violations using OpenAI's omni-moderation model.
+ * Catches sexual content, violence/gore, self-harm, hate symbols, etc.
+ */
+export async function moderateImage(imageBase64: string): Promise<{
+  safe: boolean;
+  flaggedCategories: string[];
+}> {
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  const result = await openai.moderations.create({
+    model: "omni-moderation-latest",
+    input: [
+      {
+        type: "image_url",
+        image_url: { url: `data:image/png;base64,${imageBase64}` },
+      },
+    ],
+  });
+
+  const modResult = result.results[0];
+  const flaggedCategories = Object.entries(modResult.categories)
+    .filter(([, v]) => v)
+    .map(([k]) => k);
+
+  return { safe: !modResult.flagged, flaggedCategories };
 }

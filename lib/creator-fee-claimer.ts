@@ -20,9 +20,9 @@ import {
 } from "./solana-wallet";
 import {
   secureGetWallet,
-  secureGetBalance,
 } from "./secure-wallet";
 import { logWalletOperation } from "./wallet-audit";
+import { distributeBulkClaim } from "./claim-distributor";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -57,8 +57,40 @@ export interface ClaimCycleResult {
 // ---------------------------------------------------------------------------
 
 /**
+ * Parse the confirmed claim transaction to extract the exact SOL received
+ * by the master wallet, immune to concurrent transfers inflating the amount.
+ */
+async function getClaimedLamportsFromTx(
+  connection: Connection,
+  signature: string,
+  walletPubkey: Keypair["publicKey"],
+): Promise<number> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const txInfo = await connection.getTransaction(signature, {
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
+    });
+
+    if (txInfo?.meta) {
+      const keys = txInfo.transaction.message.staticAccountKeys;
+      const idx = keys.findIndex((k) => k.equals(walletPubkey));
+      if (idx >= 0) {
+        return Math.max(0, txInfo.meta.postBalances[idx] - txInfo.meta.preBalances[idx]);
+      }
+      return 0;
+    }
+
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return 0;
+}
+
+/**
  * Claim creator fees from the master wallet.
  * One call collects fees for ALL tokens deployed with this wallet.
+ * After a successful claim, automatically distributes 50% to submitters
+ * via the bulk claim distributor.
+ *
  * Called every 30 minutes by the scheduler.
  */
 export async function claimAllCreatorFees(): Promise<ClaimCycleResult> {
@@ -68,14 +100,12 @@ export async function claimAllCreatorFees(): Promise<ClaimCycleResult> {
   try {
     console.log("[FeeClaimer] Claiming master wallet creator fees...");
 
-    const balanceBefore = await secureGetBalance("fee-claimer:before");
     const signature = await callCollectCreatorFee(connection, masterWallet);
     console.log(`[FeeClaimer] Master wallet claim tx: ${signature}`);
 
-    // Brief wait for balance to settle, then measure how much we received
-    await new Promise((r) => setTimeout(r, 2000));
-    const balanceAfter = await secureGetBalance("fee-claimer:after");
-    const claimedLamports = Math.max(0, balanceAfter.lamports - balanceBefore.lamports);
+    const claimedLamports = await getClaimedLamportsFromTx(
+      connection, signature, masterWallet.publicKey,
+    );
 
     console.log(`[FeeClaimer] Claimed: ${claimedLamports / LAMPORTS_PER_SOL} SOL`);
 
@@ -86,6 +116,23 @@ export async function claimAllCreatorFees(): Promise<ClaimCycleResult> {
       txSignature: signature,
       amountLamports: claimedLamports,
     });
+
+    if (claimedLamports > 0) {
+      console.log(`[FeeClaimer] Auto-distributing ${claimedLamports / LAMPORTS_PER_SOL} SOL to submitters...`);
+      try {
+        const distResult = await distributeBulkClaim(signature, claimedLamports);
+        if (distResult.success) {
+          console.log(
+            `[FeeClaimer] Distribution complete: batch #${distResult.batchId}, ` +
+            `${distResult.distributedLamports! / LAMPORTS_PER_SOL} SOL across ${distResult.tokensCount} token(s)`
+          );
+        } else {
+          console.warn(`[FeeClaimer] Distribution skipped: ${distResult.error}`);
+        }
+      } catch (distErr) {
+        console.error("[FeeClaimer] Distribution error (claim was successful):", distErr);
+      }
+    }
 
     return {
       processed: 1,

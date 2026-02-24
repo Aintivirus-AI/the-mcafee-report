@@ -84,6 +84,8 @@ export interface Submission {
   cached_content: string | null; // JSON stringified PageContent from validation
   custom_token_name: string | null;
   custom_ticker: string | null;
+  custom_image_url: string | null;
+  memeify_image: number; // 0 = use as-is, 1 = meme-ify via OpenAI
   published_at: string | null;
   created_at: string;
 }
@@ -96,6 +98,8 @@ export interface CreateSubmissionRequest {
   content_type?: ContentType;
   custom_token_name?: string;
   custom_ticker?: string;
+  custom_image_url?: string;
+  memeify_image?: boolean;
 }
 
 // ============= TOKEN TYPES =============
