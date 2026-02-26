@@ -36,7 +36,7 @@ const IGNORED_SENDERS = new Set(
 
 // Replay protection: track processed transaction signatures
 const processedSignatures = new Map<string, number>(); // signature → timestamp
-const MAX_PROCESSED_SIGNATURES = 10_000;
+const MAX_PROCESSED_SIGNATURES = 2_000;
 const SIGNATURE_TTL_MS = 24 * 60 * 60 * 1000; // Keep for 24 hours
 
 // Max webhook age to accept (prevent replay of very old webhooks)
@@ -61,6 +61,16 @@ function markSignatureProcessed(signature: string): void {
     }
   }
 }
+
+// Periodically evict expired signatures to prevent unbounded growth between bursts
+setInterval(() => {
+  const now = Date.now();
+  for (const [sig, ts] of processedSignatures) {
+    if (now - ts > SIGNATURE_TTL_MS) {
+      processedSignatures.delete(sig);
+    }
+  }
+}, 30 * 60 * 1000);
 
 /**
  * Verify the webhook request is from Helius.

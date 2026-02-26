@@ -72,6 +72,16 @@ function isRateLimited(request: NextRequest): boolean {
   return false;
 }
 
+// Periodically clean up stale rate limit entries to prevent unbounded growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitMap) {
+    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
+      rateLimitMap.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
 /**
  * Fetch price data from pump.fun API
  */

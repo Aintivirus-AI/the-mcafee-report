@@ -15,8 +15,8 @@ const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_MCAFEE_VOICE_ID;
 
 // Simple in-memory cache to avoid re-generating the same text
 const audioCache = new Map<string, { buffer: ArrayBuffer; timestamp: number }>();
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const MAX_CACHE_ENTRIES = 100;
+const CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours (reduced from 24h to limit memory pressure from large ArrayBuffers)
+const MAX_CACHE_ENTRIES = 25; // ~25 entries × ~1MB each ≈ 25MB max
 
 // Rate limiting: max requests per IP per window
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
@@ -57,6 +57,11 @@ setInterval(() => {
     }
   }
 }, 5 * 60 * 1000);
+
+// Periodically prune expired audio cache entries to reclaim memory from large ArrayBuffers
+setInterval(() => {
+  pruneCache();
+}, 10 * 60 * 1000);
 
 function getCacheKey(text: string): string {
   // Use SHA-256 for collision-resistant cache keys

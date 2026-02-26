@@ -4,6 +4,7 @@ module.exports = {
       name: "aintivirus-web",
       script: "node_modules/.bin/next",
       args: "start -p 3002",
+      node_args: "--max-old-space-size=768",
       cwd: "/var/www/aintivirus-drudgereport",
       instances: 1,
       exec_mode: "fork",
