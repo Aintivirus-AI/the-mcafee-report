@@ -69,6 +69,9 @@ export async function validateSubmission(
 
     // Check fact validity
     if (factCheckResult.score < 50) {
+      console.warn(
+        `[Validator] Fact-check rejection: score=${factCheckResult.score}, reason="${factCheckResult.reason}"`
+      );
       return {
         isValid: false,
         factScore: factCheckResult.score,
@@ -181,14 +184,13 @@ Respond with a JSON object:
       score: Math.min(100, Math.max(0, result.score || 0)),
       reason: result.reason,
     };
-  } catch (error) {
-    console.error("Error in fact check:", error);
-    // Default to LOW score on error — fails the fact check threshold (<50).
-    // This forces manual review instead of silently auto-approving when
-    // the AI API is down or returns errors.
+  } catch (error: any) {
+    const errMsg = error?.message || String(error);
+    const errStatus = error?.status || "N/A";
+    console.error(`[FactCheck] Error (status=${errStatus}): ${errMsg}`);
     return {
       score: 30,
-      reason: "Fact verification unavailable – requires manual review",
+      reason: `Fact verification unavailable – requires manual review (${errMsg})`,
     };
   }
 }
