@@ -1359,7 +1359,16 @@ bot.on("message:photo", async (ctx) => {
 
     // Screen for NSFW / policy violations via OpenAI moderation
     const imageBase64 = imageBuffer.toString("base64");
-    const moderation = await moderateImage(imageBase64);
+    let moderation: { safe: boolean; flaggedCategories: string[] };
+    try {
+      moderation = await moderateImage(imageBase64);
+    } catch (err) {
+      console.error("[Bot] Photo upload error:", err);
+      await ctx.reply(
+        "Image moderation is temporarily unavailable. Please try again in a moment, or /skip."
+      );
+      return;
+    }
 
     if (!moderation.safe) {
       const categories = moderation.flaggedCategories.join(", ");

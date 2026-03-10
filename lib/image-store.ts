@@ -180,26 +180,44 @@ export function getImagePublicUrl(imagePath: string): string {
  * Screen an image for policy violations using OpenAI's omni-moderation model.
  * Catches sexual content, violence/gore, self-harm, hate symbols, etc.
  */
-export async function moderateImage(imageBase64: string): Promise<{
+export async function moderateImage(
+  imageBase64: string,
+  maxRetries = 3
+): Promise<{
   safe: boolean;
   flaggedCategories: string[];
 }> {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  const result = await openai.moderations.create({
-    model: "omni-moderation-latest",
-    input: [
-      {
-        type: "image_url",
-        image_url: { url: `data:image/png;base64,${imageBase64}` },
-      },
-    ],
-  });
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const result = await openai.moderations.create({
+        model: "omni-moderation-latest",
+        input: [
+          {
+            type: "image_url",
+            image_url: { url: `data:image/png;base64,${imageBase64}` },
+          },
+        ],
+      });
 
-  const modResult = result.results[0];
-  const flaggedCategories = Object.entries(modResult.categories)
-    .filter(([, v]) => v)
-    .map(([k]) => k);
+      const modResult = result.results[0];
+      const flaggedCategories = Object.entries(modResult.categories)
+        .filter(([, v]) => v)
+        .map(([k]) => k);
 
-  return { safe: !modResult.flagged, flaggedCategories };
+      return { safe: !modResult.flagged, flaggedCategories };
+    } catch (err: any) {
+      lastError = err;
+      if (err?.status === 429 && attempt < maxRetries - 1) {
+        const backoffMs = 1000 * 2 ** attempt;
+        await new Promise((r) => setTimeout(r, backoffMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw lastError;
 }
