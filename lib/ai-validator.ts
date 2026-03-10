@@ -19,9 +19,10 @@ import {
 } from "./db";
 import { safeFetchText, sanitizeForPrompt } from "./url-validator";
 
-// Initialize OpenAI client
+// Initialize OpenAI client with automatic retry on 429s
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+  maxRetries: 3,
 });
 
 // Embedding similarity thresholds for duplicate detection
