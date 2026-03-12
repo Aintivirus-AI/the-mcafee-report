@@ -1969,26 +1969,39 @@ export function getClaimDistributionSummary(batchId: number): Array<{
  * Reads from wallet_audit_log where operation = 'claim_creator_fee'.
  * If no distribution has ever been run, returns all-time claimed total.
  */
-export function getUndistrbutedClaimTotal(): { lamports: number; claimCount: number; since: string | null } {
+export function getUndistributedClaimTotal(): { lamports: number; claimCount: number; since: string | null } {
   const lastBatch = db.prepare(`
     SELECT created_at FROM claim_batches ORDER BY created_at DESC LIMIT 1
   `).get() as { created_at: string } | undefined;
 
   const since = lastBatch?.created_at ?? null;
 
-  const row = db.prepare(`
-    SELECT
-      COALESCE(SUM(amount_lamports), 0) AS total,
-      COUNT(*) AS cnt
-    FROM wallet_audit_log
-    WHERE operation = 'claim_creator_fee'
-      AND success = 1
-      AND amount_lamports > 0
-      ${since ? `AND timestamp > '${since}'` : ""}
-  `).get() as { total: number; cnt: number };
+  const row = since
+    ? db.prepare(`
+        SELECT
+          COALESCE(SUM(amount_lamports), 0) AS total,
+          COUNT(*) AS cnt
+        FROM wallet_audit_log
+        WHERE operation = 'claim_creator_fee'
+          AND success = 1
+          AND amount_lamports > 0
+          AND timestamp > ?
+      `).get(since) as { total: number; cnt: number }
+    : db.prepare(`
+        SELECT
+          COALESCE(SUM(amount_lamports), 0) AS total,
+          COUNT(*) AS cnt
+        FROM wallet_audit_log
+        WHERE operation = 'claim_creator_fee'
+          AND success = 1
+          AND amount_lamports > 0
+      `).get() as { total: number; cnt: number };
 
   return { lamports: row.total, claimCount: row.cnt, since };
 }
+
+/** @deprecated Use getUndistributedClaimTotal instead */
+export const getUndistrbutedClaimTotal = getUndistributedClaimTotal;
 
 // ============= COMMENTS =============
 
@@ -2152,17 +2165,20 @@ export function addPoolWallet(
  */
 export function claimPoolWallet(minAgeMinutes: number = 0): PoolWallet | null {
   const claim = db.transaction(() => {
-    const ageFilter = minAgeMinutes > 0
-      ? `AND funded_at <= datetime('now', '-${Math.floor(minAgeMinutes)} minutes')`
-      : "";
-
-    const wallet = db.prepare(`
-      SELECT * FROM deployer_pool
-      WHERE status = 'ready'
-        ${ageFilter}
-      ORDER BY funded_at ASC
-      LIMIT 1
-    `).get() as PoolWallet | undefined;
+    const wallet = minAgeMinutes > 0
+      ? db.prepare(`
+          SELECT * FROM deployer_pool
+          WHERE status = 'ready'
+            AND funded_at <= datetime('now', '-' || ? || ' minutes')
+          ORDER BY funded_at ASC
+          LIMIT 1
+        `).get(Math.floor(minAgeMinutes)) as PoolWallet | undefined
+      : db.prepare(`
+          SELECT * FROM deployer_pool
+          WHERE status = 'ready'
+          ORDER BY funded_at ASC
+          LIMIT 1
+        `).get() as PoolWallet | undefined;
 
     if (!wallet) return null;
 

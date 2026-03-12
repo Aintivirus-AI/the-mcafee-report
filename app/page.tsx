@@ -55,9 +55,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Top coins scrolling ribbon */}
-        {/* <TopCoinsRibbon /> */}
-
         {/* Neon divider */}
         <div className="neon-divider" />
 

@@ -225,7 +225,7 @@ async function downloadImageAsBlob(imageUrl: string): Promise<Blob> {
     maxBytes: 10 * 1024 * 1024, // 10 MB max
     // Skip SSRF check only for known-safe hosts
     skipSsrfCheck: imageUrl.includes("oaidalleapiprodscus.blob.core.windows.net") ||
-                   imageUrl.startsWith(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
+                   (!!process.env.NEXT_PUBLIC_SITE_URL && imageUrl.startsWith(process.env.NEXT_PUBLIC_SITE_URL)),
   });
   if (!response.ok) {
     throw new Error(`Failed to download image: ${response.status}`);
