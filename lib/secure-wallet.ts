@@ -25,6 +25,7 @@ import { logWalletOperation } from "./wallet-audit";
 import {
   checkSendGuardrails,
   checkOperationGuardrails,
+  withGuardrailLock,
 } from "./wallet-guardrails";
 
 // Re-export utilities that don't need the security wrapper
@@ -44,27 +45,29 @@ export async function secureSendSol(
   caller: string,
   options: { maxRetries?: number; skipPreflight?: boolean } = {}
 ): Promise<{ success: boolean; signature?: string; error?: string }> {
-  // Pre-flight guardrail check
-  const guardrailResult = checkSendGuardrails(recipientAddress, lamports, caller);
-  if (!guardrailResult.allowed) {
-    return { success: false, error: guardrailResult.reason };
-  }
+  return withGuardrailLock(async () => {
+    // Pre-flight guardrail check (inside lock to prevent TOCTOU on daily limit)
+    const guardrailResult = checkSendGuardrails(recipientAddress, lamports, caller);
+    if (!guardrailResult.allowed) {
+      return { success: false, error: guardrailResult.reason };
+    }
 
-  // Delegate to the underlying wallet
-  const result = await _sendSol(recipientAddress, lamports, options);
+    // Delegate to the underlying wallet
+    const result = await _sendSol(recipientAddress, lamports, options);
 
-  // Audit log
-  logWalletOperation({
-    operation: "send_sol",
-    amountLamports: lamports,
-    destination: recipientAddress,
-    txSignature: result.signature,
-    caller,
-    success: result.success,
-    errorMessage: result.error,
+    // Audit log
+    logWalletOperation({
+      operation: "send_sol",
+      amountLamports: lamports,
+      destination: recipientAddress,
+      txSignature: result.signature,
+      caller,
+      success: result.success,
+      errorMessage: result.error,
+    });
+
+    return result;
   });
-
-  return result;
 }
 
 // ---------------------------------------------------------------------------
