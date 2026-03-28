@@ -134,9 +134,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { headline_id, vote_type } = body;
 
-    if (typeof headline_id !== "number" || typeof vote_type !== "string") {
+    if (headline_id == null || vote_type == null || typeof vote_type !== "string") {
       return NextResponse.json(
-        { error: "headline_id must be a number and vote_type must be a string" },
+        { error: "headline_id and vote_type are required" },
         { status: 400 }
       );
     }
