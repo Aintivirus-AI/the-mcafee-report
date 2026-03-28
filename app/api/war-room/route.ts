@@ -15,7 +15,14 @@ export async function GET(request: NextRequest) {
     const limitStr = searchParams.get("limit");
 
     const limit = Math.min(parseInt(limitStr || "50", 10) || 50, 100);
-    const afterId = afterIdStr ? parseInt(afterIdStr, 10) : undefined;
+    let afterId: number | undefined;
+    if (afterIdStr !== null) {
+      const parsed = parseInt(afterIdStr, 10);
+      if (isNaN(parsed) || parsed <= 0 || parsed > 2147483647) {
+        return NextResponse.json({ error: "Invalid after parameter" }, { status: 400 });
+      }
+      afterId = parsed;
+    }
 
     const events = getActivityLog(limit, afterId);
     const stats = getActivityStats();

@@ -17,7 +17,7 @@ export async function GET(
   const { id } = await params;
   const headlineId = parseInt(id, 10);
 
-  if (isNaN(headlineId)) {
+  if (isNaN(headlineId) || headlineId <= 0) {
     return new Response("Invalid ID", { status: 400 });
   }
 

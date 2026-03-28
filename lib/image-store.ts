@@ -157,10 +157,17 @@ export function isValidRasterImage(buffer: Buffer): boolean {
     return true;
   }
 
-  // SVG explicitly REJECTED (starts with < and contains <svg)
-  // SVG files can contain <script> tags and other XSS payloads
-  if (buffer[0] === 0x3c) {
-    return false; // Any XML-like content is rejected
+  // SVG/XML explicitly REJECTED — check the first 1024 bytes as text after
+  // stripping common BOMs so that UTF-8 BOM, UTF-16, or leading whitespace
+  // cannot bypass the check. SVG can contain <script> tags (stored XSS).
+  let textToScan = buffer.slice(0, 1024);
+  // Strip UTF-8 BOM (EF BB BF)
+  if (textToScan[0] === 0xef && textToScan[1] === 0xbb && textToScan[2] === 0xbf) {
+    textToScan = textToScan.slice(3);
+  }
+  const preview = textToScan.toString("utf-8").trimStart().toLowerCase();
+  if (preview.startsWith("<svg") || preview.startsWith("<?xml") || preview.includes("<svg")) {
+    return false;
   }
 
   return false;

@@ -13,7 +13,8 @@
     "bot": "tsx bot/index.ts",
     "bot:dev": "tsx watch bot/index.ts",
     "scheduler": "tsx worker/scheduler.ts",
-    "scheduler:dev": "tsx watch worker/scheduler.ts"
+    "scheduler:dev": "tsx watch worker/scheduler.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.988.0",
@@ -40,6 +41,7 @@
     "postcss": "^8.5.0",
     "tailwindcss": "^3.4.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.2"
   }
 }

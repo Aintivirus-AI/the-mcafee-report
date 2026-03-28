@@ -155,8 +155,8 @@ async function main(): Promise<void> {
 
   // Run all jobs immediately on startup (don't wait for first cron tick)
   await safeRunCycle();
-  safeProcessRevenue().catch(() => {});
-  safeClaimCreatorFees().catch(() => {});
+  safeProcessRevenue().catch((err) => console.error("[Worker] startup revenue task failed:", err));
+  safeClaimCreatorFees().catch((err) => console.error("[Worker] startup fee-claim task failed:", err));
 
   // Fixed 10-minute publishing cycle: 1 article per cycle = 6/hour, 144/day
   const publishingTask = cron.schedule("*/10 * * * *", async () => {

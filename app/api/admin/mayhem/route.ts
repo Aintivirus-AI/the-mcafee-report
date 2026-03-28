@@ -1,19 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSetting, setSetting } from "@/lib/db";
+import { safeCompare } from "@/lib/auth";
 
 const API_KEY = process.env.SCHEDULER_API_KEY || process.env.API_KEY || "";
 
 function isAuthorized(request: NextRequest): boolean {
   if (!API_KEY) return false;
   const key = request.headers.get("x-api-key");
-  return key === API_KEY;
+  return !!key && safeCompare(key, API_KEY);
 }
 
 /**
  * GET /api/admin/mayhem
- * Returns the current mayhem mode status (no auth needed for public read).
+ * Returns the current mayhem mode status (requires API key auth).
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const value = getSetting("mayhem_mode");
   return NextResponse.json({
     enabled: value === "on",

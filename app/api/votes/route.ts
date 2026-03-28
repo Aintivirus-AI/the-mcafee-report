@@ -42,7 +42,7 @@ setInterval(() => {
  * Uses IP + User-Agent + Accept-Language + a server-side salt to make
  * the hash resistant to spoofing any single header.
  */
-const VOTER_HASH_SALT = process.env.API_SECRET_KEY || "default-voter-salt";
+const VOTER_HASH_SALT = process.env.VOTER_HASH_SALT || process.env.API_SECRET_KEY || "default-voter-salt";
 
 function getVoterHash(request: NextRequest): string {
   const ip =
@@ -134,9 +134,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { headline_id, vote_type } = body;
 
-    if (!headline_id || !vote_type) {
+    if (typeof headline_id !== "number" || typeof vote_type !== "string") {
       return NextResponse.json(
-        { error: "headline_id and vote_type are required" },
+        { error: "headline_id must be a number and vote_type must be a string" },
         { status: 400 }
       );
     }

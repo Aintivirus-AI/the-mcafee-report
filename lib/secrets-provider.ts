@@ -74,10 +74,12 @@ async function fetchFromAWS(): Promise<string> {
   const raw = response.SecretString.trim();
   try {
     const parsed = JSON.parse(raw);
-    if (typeof parsed.privateKey === "string") {
-      return parsed.privateKey;
+    if (!parsed || typeof parsed !== "object" || typeof parsed.privateKey !== "string" || !parsed.privateKey) {
+      throw new Error("Invalid secret format: expected { \"privateKey\": \"...\" }");
     }
-  } catch {
+    return parsed.privateKey;
+  } catch (e) {
+    if ((e as Error).message.startsWith("Invalid secret format")) throw e;
     // Not JSON — treat as raw base58 string
   }
 

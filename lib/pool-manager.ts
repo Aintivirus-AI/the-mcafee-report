@@ -69,8 +69,8 @@ export async function fundPoolWallets(
   const result: FundResult = { funded: 0, failed: 0, totalSolSpent: 0, errors: [] };
 
   const encryptionKey = process.env.WALLET_ENCRYPTION_KEY;
-  if (!encryptionKey) {
-    result.errors.push("WALLET_ENCRYPTION_KEY not set — cannot encrypt pool wallet keys");
+  if (!encryptionKey || encryptionKey.length < 32) {
+    result.errors.push("WALLET_ENCRYPTION_KEY must be set and at least 32 characters — cannot encrypt pool wallet keys");
     return result;
   }
 
@@ -188,8 +188,8 @@ export async function sweepPoolWallets(
   const result: SweepResult = { swept: 0, failed: 0, totalSolRecovered: 0, errors: [] };
 
   const encryptionKey = process.env.WALLET_ENCRYPTION_KEY;
-  if (!encryptionKey) {
-    result.errors.push("WALLET_ENCRYPTION_KEY not set — cannot decrypt pool wallet keys");
+  if (!encryptionKey || encryptionKey.length < 32) {
+    result.errors.push("WALLET_ENCRYPTION_KEY must be set and at least 32 characters — cannot decrypt pool wallet keys");
     return result;
   }
 

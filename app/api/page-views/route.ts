@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { recordPageView, getVisitStats } from "@/lib/db";
+import { safeCompare } from "@/lib/auth";
 
 // Rate limiting per IP
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
@@ -36,7 +37,7 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
-const HASH_SALT = process.env.API_SECRET_KEY || "default-pageview-salt";
+const HASH_SALT = process.env.VISITOR_HASH_SALT || process.env.API_SECRET_KEY || "default-pageview-salt";
 
 function getVisitorHash(request: NextRequest): string {
   const ip =
@@ -108,7 +109,7 @@ export async function GET(request: NextRequest) {
     const apiKey = request.headers.get("x-api-key");
     const expectedKey = process.env.API_SECRET_KEY;
 
-    if (!expectedKey || apiKey !== expectedKey) {
+    if (!apiKey || !expectedKey || !safeCompare(apiKey, expectedKey)) {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401 }
