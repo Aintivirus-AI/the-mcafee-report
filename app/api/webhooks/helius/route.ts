@@ -230,13 +230,15 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Timestamp validation: reject very old transactions
-      if (tx.timestamp) {
-        const txAgeSeconds = Math.floor(Date.now() / 1000) - tx.timestamp;
-        if (txAgeSeconds > MAX_WEBHOOK_AGE_SECONDS) {
-          console.warn(`[HeliusWebhook] Stale tx ${tx.signature} (${txAgeSeconds}s old), skipping`);
-          continue;
-        }
+      // Timestamp validation: reject transactions missing or very old timestamps
+      if (!tx.timestamp) {
+        console.warn(`[HeliusWebhook] Tx ${tx.signature} missing timestamp, skipping`);
+        continue;
+      }
+      const txAgeSeconds = Math.floor(Date.now() / 1000) - tx.timestamp;
+      if (txAgeSeconds > MAX_WEBHOOK_AGE_SECONDS) {
+        console.warn(`[HeliusWebhook] Stale tx ${tx.signature} (${txAgeSeconds}s old), skipping`);
+        continue;
       }
 
       // Mark as processed BEFORE distribution to prevent race conditions

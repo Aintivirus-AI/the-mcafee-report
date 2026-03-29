@@ -34,7 +34,7 @@ function evictCache() {
 
   // Remove expired entries
   for (const [key, value] of priceCache) {
-    if (now - value.lastUpdated > CACHE_TTL_MS * 10) {
+    if (now - value.lastUpdated > CACHE_TTL_MS) {
       priceCache.delete(key);
     }
   }

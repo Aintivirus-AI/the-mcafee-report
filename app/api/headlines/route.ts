@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const column = searchParams.get("column") || "all";
-    const limit = parseInt(searchParams.get("limit") || "25", 10);
+    const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "25", 10), 1), 200);
 
     if (column === "all") {
       const headlines = getAllHeadlines(limit);

@@ -118,7 +118,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
   return (
     <main className="main-content">
       {/* NewsArticle structured data */}
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/\//g, '\\u002f') }} />
 
       <div className="min-h-screen grid-bg">
       {/* Header bar */}

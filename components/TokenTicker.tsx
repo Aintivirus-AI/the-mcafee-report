@@ -28,7 +28,7 @@ export function TokenTicker() {
           setCotdUrl(data.coinOfTheDay.url);
         }
       })
-      .catch(() => {});
+      .catch((err) => console.warn('[TokenTicker] fetch failed:', err));
   }, []);
 
   const handleCopy = () => {

@@ -631,6 +631,28 @@ export function getHeadlineById(id: number): Headline | undefined {
   };
 }
 
+interface HeadlineDetailRow {
+  id: number;
+  title: string;
+  url: string;
+  column: string;
+  image_url: string | null;
+  token_id: number | null;
+  created_at: string;
+  importance_score: number | null;
+  mcafee_take: string | null;
+  summary: string | null;
+  ticker: string | null;
+  pump_url: string | null;
+  token_name: string | null;
+  mint_address: string | null;
+  token_image_url: string | null;
+  submitter_username: string | null;
+  submitter_wallet: string | null;
+  submission_created_at: string | null;
+  cached_content: string | null;
+}
+
 /**
  * Get a headline with full token and submission data (for article pages)
  */
@@ -656,7 +678,7 @@ export function getHeadlineWithDetails(id: number): (Headline & {
     LEFT JOIN submissions s ON t.submission_id = s.id
     WHERE h.id = ?
   `);
-  const row = stmt.get(id) as any;
+  const row = stmt.get(id) as HeadlineDetailRow | undefined;
   if (!row) return undefined;
   
   return {

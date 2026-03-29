@@ -19,7 +19,7 @@ export function CopyAddressButton({ address }: { address: string }) {
         if (timerRef.current) clearTimeout(timerRef.current);
         timerRef.current = setTimeout(() => setCopied(false), 2000);
       })
-      .catch(() => {});
+      .catch((err) => console.warn('[CopyAddressButton] clipboard write failed:', err));
   };
 
   return (

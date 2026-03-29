@@ -50,7 +50,7 @@ export function SentimentMeter({ alwaysShow = false }: SentimentMeterProps) {
       fetch("/api/votes?aggregate=true")
         .then(res => res.json())
         .then(data => setSentiment(data))
-        .catch(() => {});
+        .catch((err) => console.warn('[SentimentMeter] fetch failed:', err));
     };
 
     fetchSentiment();
