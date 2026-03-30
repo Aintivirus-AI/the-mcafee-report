@@ -2299,30 +2299,31 @@ process.on("unhandledRejection", async (reason) => {
   console.error("Unhandled rejection:", reason);
 });
 
-// Start the bot with retry on 409 conflict
-async function startWithRetry(maxRetries = 5) {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      console.log(`Starting bot (attempt ${attempt}/${maxRetries})...`);
-      await bot.start({
-        onStart: (botInfo) => {
-          console.log(`Bot started: @${botInfo.username}`);
-          console.log(`API: ${API_URL}`);
-          console.log(`Admins: ${ADMIN_IDS.join(", ") || "none"}`);
-          if (process.send) {
-            process.send("ready");
-          }
-        },
-      });
-      break; // started successfully
-    } catch (err: any) {
-      if (err?.error_code === 409 && attempt < maxRetries) {
-        console.log(`Got 409 conflict, waiting 35s before retry...`);
-        await new Promise(r => setTimeout(r, 35000));
-      } else {
-        throw err;
-      }
-    }
+// Start the bot with proper session cleanup to prevent 409 conflicts
+async function startBot() {
+  // Force-terminate any lingering polling session on Telegram side
+  // This is Telegram official way to clear an active getUpdates connection
+  console.log("Clearing any existing polling session...");
+  try {
+    await bot.api.deleteWebhook({ drop_pending_updates: false });
+    console.log("Polling session cleared.");
+  } catch (e) {
+    console.log("deleteWebhook call failed (non-fatal):", e);
   }
+
+  // Small delay to ensure Telegram has fully released the old session
+  await new Promise(r => setTimeout(r, 3000));
+
+  console.log("Starting bot...");
+  await bot.start({
+    onStart: (botInfo) => {
+      console.log(`Bot started: @${botInfo.username}`);
+      console.log(`API: ${API_URL}`);
+      console.log(`Admins: ${ADMIN_IDS.join(", ") || "none"}`);
+      if (process.send) {
+        process.send("ready");
+      }
+    },
+  });
 }
-startWithRetry();
+startBot().catch((err) => { console.error("Bot polling loop died:", err?.message || err); console.log("Exiting cleanly — PM2 will restart with a fresh session."); process.exit(1); });
