@@ -635,7 +635,7 @@ interface HeadlineDetailRow {
   id: number;
   title: string;
   url: string;
-  column: string;
+  column: "left" | "right" | "center";
   image_url: string | null;
   token_id: number | null;
   created_at: string;
