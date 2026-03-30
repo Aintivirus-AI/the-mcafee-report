@@ -2299,16 +2299,30 @@ process.on("unhandledRejection", async (reason) => {
   console.error("Unhandled rejection:", reason);
 });
 
-// Start the bot
-console.log("Starting bot...");
-bot.start({
-  onStart: (botInfo) => {
-    console.log(`Bot started: @${botInfo.username}`);
-    console.log(`API: ${API_URL}`);
-    console.log(`Admins: ${ADMIN_IDS.join(", ") || "none"}`);
-
-    if (process.send) {
-      process.send("ready");
+// Start the bot with retry on 409 conflict
+async function startWithRetry(maxRetries = 5) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`Starting bot (attempt ${attempt}/${maxRetries})...`);
+      await bot.start({
+        onStart: (botInfo) => {
+          console.log(`Bot started: @${botInfo.username}`);
+          console.log(`API: ${API_URL}`);
+          console.log(`Admins: ${ADMIN_IDS.join(", ") || "none"}`);
+          if (process.send) {
+            process.send("ready");
+          }
+        },
+      });
+      break; // started successfully
+    } catch (err: any) {
+      if (err?.error_code === 409 && attempt < maxRetries) {
+        console.log(`Got 409 conflict, waiting 35s before retry...`);
+        await new Promise(r => setTimeout(r, 35000));
+      } else {
+        throw err;
+      }
     }
-  },
-});
+  }
+}
+startWithRetry();

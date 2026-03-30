@@ -39,10 +39,10 @@ module.exports = {
       autorestart: true,
       watch: false,
       max_memory_restart: "500M",
-      kill_timeout: 5000, // Give bot 5 seconds to gracefully disconnect from Telegram
-      wait_ready: true, // Wait for process to be ready before considering it started
-      listen_timeout: 10000, // Timeout for ready signal
-      exp_backoff_restart_delay: 1000,
+      kill_timeout: 35000, // Give bot 5 seconds to gracefully disconnect from Telegram
+      wait_ready: false, // Wait for process to be ready before considering it started
+      listen_timeout: 45000, // Timeout for ready signal
+      restart_delay: 35000, // 35s fixed delay — wait for Telegram long-poll to expire
       max_restarts: 50,
     },
     {
