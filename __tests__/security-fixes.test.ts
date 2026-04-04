@@ -117,6 +117,166 @@ describe('Webhook timestamp validation', () => {
 });
 
 // ---------------------------------------------------------------------------
+// NEW: API key empty-string bypass (app/api/admin/mayhem/route.ts)
+// ---------------------------------------------------------------------------
+describe('API key empty-string bypass prevention', () => {
+  function isAuthorized(apiKey: string | undefined, incomingKey: string | null): boolean {
+    if (!apiKey) return false;
+    if (!incomingKey) return false;
+    // Simulate safeCompare (same length required for timing-safe)
+    if (incomingKey.length !== apiKey.length) return false;
+    return incomingKey === apiKey; // simplified for unit test
+  }
+
+  it('rejects when API_KEY is undefined (no env var set)', () => {
+    expect(isAuthorized(undefined, '')).toBe(false);
+    expect(isAuthorized(undefined, 'anykey')).toBe(false);
+  });
+
+  it('rejects when API_KEY is empty string (old fallback behaviour)', () => {
+    expect(isAuthorized('', '')).toBe(false);
+  });
+
+  it('rejects when incoming key is empty and API_KEY is set', () => {
+    expect(isAuthorized('secretkey', '')).toBe(false);
+  });
+
+  it('accepts valid matching key', () => {
+    expect(isAuthorized('secretkey', 'secretkey')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NEW: Webhook Bearer format enforcement (app/api/webhooks/helius/route.ts)
+// ---------------------------------------------------------------------------
+describe('Webhook Bearer format enforcement', () => {
+  function verifyAuthHeader(authHeader: string | null, webhookSecret: string): boolean {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return false;
+    const token = authHeader.slice(7);
+    return token === webhookSecret;
+  }
+
+  it('rejects bare secret (no Bearer prefix)', () => {
+    expect(verifyAuthHeader('mysecret', 'mysecret')).toBe(false);
+  });
+
+  it('rejects empty header', () => {
+    expect(verifyAuthHeader(null, 'mysecret')).toBe(false);
+    expect(verifyAuthHeader('', 'mysecret')).toBe(false);
+  });
+
+  it('rejects wrong Bearer token', () => {
+    expect(verifyAuthHeader('Bearer wrongtoken', 'mysecret')).toBe(false);
+  });
+
+  it('accepts correct Bearer token', () => {
+    expect(verifyAuthHeader('Bearer mysecret', 'mysecret')).toBe(true);
+  });
+
+  it('rejects "Bearer " with empty token against non-empty secret', () => {
+    expect(verifyAuthHeader('Bearer ', 'mysecret')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NEW: VOTER_HASH_SALT domain coupling (app/api/votes/route.ts)
+// ---------------------------------------------------------------------------
+describe('VOTER_HASH_SALT domain decoupling', () => {
+  function getVoterHashSalt(env: { VOTER_HASH_SALT?: string; API_SECRET_KEY?: string }): string {
+    // Old (broken) behaviour: falls back to API_SECRET_KEY
+    return env.VOTER_HASH_SALT || env.API_SECRET_KEY || 'default-voter-salt';
+  }
+
+  function getVoterHashSaltFixed(env: { VOTER_HASH_SALT?: string }): string {
+    if (!env.VOTER_HASH_SALT) throw new Error('VOTER_HASH_SALT env var is required');
+    return env.VOTER_HASH_SALT;
+  }
+
+  it('old behaviour silently uses API_SECRET_KEY when VOTER_HASH_SALT is missing', () => {
+    const salt = getVoterHashSalt({ API_SECRET_KEY: 'api-key-value' });
+    expect(salt).toBe('api-key-value'); // dangerous coupling
+  });
+
+  it('fixed behaviour throws when VOTER_HASH_SALT is missing', () => {
+    expect(() => getVoterHashSaltFixed({})).toThrow('VOTER_HASH_SALT env var is required');
+  });
+
+  it('fixed behaviour returns VOTER_HASH_SALT when set', () => {
+    expect(getVoterHashSaltFixed({ VOTER_HASH_SALT: 'my-salt' })).toBe('my-salt');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NEW: WALLET_ENCRYPTION_KEY guard (lib/secrets-provider.ts)
+// ---------------------------------------------------------------------------
+describe('WALLET_ENCRYPTION_KEY guard', () => {
+  function decryptFromEnvSimulated(env: {
+    MASTER_WALLET_ENCRYPTED_KEY?: string;
+    WALLET_ENCRYPTION_KEY?: string;
+  }): string {
+    if (!env.MASTER_WALLET_ENCRYPTED_KEY) {
+      throw new Error('MASTER_WALLET_ENCRYPTED_KEY env var is required when WALLET_SECRET_PROVIDER=encrypted');
+    }
+    if (!env.WALLET_ENCRYPTION_KEY) {
+      throw new Error('WALLET_ENCRYPTION_KEY env var is required when WALLET_SECRET_PROVIDER=encrypted');
+    }
+    return 'decrypted'; // stub
+  }
+
+  it('throws clear error when WALLET_ENCRYPTION_KEY is missing', () => {
+    expect(() =>
+      decryptFromEnvSimulated({ MASTER_WALLET_ENCRYPTED_KEY: 'enc-data' })
+    ).toThrow('WALLET_ENCRYPTION_KEY env var is required');
+  });
+
+  it('throws clear error when MASTER_WALLET_ENCRYPTED_KEY is missing', () => {
+    expect(() =>
+      decryptFromEnvSimulated({ WALLET_ENCRYPTION_KEY: 'a'.repeat(64) })
+    ).toThrow('MASTER_WALLET_ENCRYPTED_KEY env var is required');
+  });
+
+  it('succeeds when both vars are present', () => {
+    expect(() =>
+      decryptFromEnvSimulated({
+        MASTER_WALLET_ENCRYPTED_KEY: 'enc-data',
+        WALLET_ENCRYPTION_KEY: 'a'.repeat(64),
+      })
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NEW: IP extraction whitespace fix (app/api/token-prices/route.ts)
+// ---------------------------------------------------------------------------
+describe('IP extraction from x-forwarded-for', () => {
+  function extractIp(header: string | null): string {
+    const rawIp = header?.split(',')[0]?.trim();
+    return (rawIp && rawIp.length > 0) ? rawIp : 'unknown';
+  }
+
+  it('returns "unknown" for whitespace-only header (old || would use "unknown" too, but via different path)', () => {
+    expect(extractIp('   ')).toBe('unknown');
+    expect(extractIp('\t')).toBe('unknown');
+  });
+
+  it('returns "unknown" for null header', () => {
+    expect(extractIp(null)).toBe('unknown');
+  });
+
+  it('extracts first IP from comma-separated list', () => {
+    expect(extractIp('1.2.3.4, 5.6.7.8')).toBe('1.2.3.4');
+  });
+
+  it('trims whitespace around IP', () => {
+    expect(extractIp('  1.2.3.4  ')).toBe('1.2.3.4');
+  });
+
+  it('returns single IP when no comma present', () => {
+    expect(extractIp('192.168.1.1')).toBe('192.168.1.1');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 4. Cache eviction TTL (app/api/token-prices/route.ts)
 // ---------------------------------------------------------------------------
 describe('Token price cache eviction TTL', () => {

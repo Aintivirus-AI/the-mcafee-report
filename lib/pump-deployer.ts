@@ -14,6 +14,7 @@ import {
   Connection,
   Keypair,
   LAMPORTS_PER_SOL,
+  PublicKey,
   VersionedTransaction,
 } from "@solana/web3.js";
 import { Worker } from "worker_threads";
@@ -44,6 +45,13 @@ const PUMP_FUN_IPFS_URL = "https://pump.fun/api/ipfs";
 
 // Mayhem Mode fee recipient (pump.fun Mayhem Mode — AI agent trading)
 const MAYHEM_FEE_RECIPIENT = process.env.MAYHEM_FEE_RECIPIENT || "";
+if (MAYHEM_FEE_RECIPIENT) {
+  try {
+    new PublicKey(MAYHEM_FEE_RECIPIENT);
+  } catch {
+    throw new Error("MAYHEM_FEE_RECIPIENT is not a valid Solana address");
+  }
+}
 
 // Minimum SOL required for deployment (~0.02 SOL + fees)
 const MIN_DEPLOYMENT_SOL = 0.03;

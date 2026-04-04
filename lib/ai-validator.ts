@@ -19,11 +19,14 @@ import {
 } from "./db";
 import { safeFetchText, sanitizeForPrompt } from "./url-validator";
 
-// Initialize OpenAI client with automatic retry on 429s
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  maxRetries: 3,
-});
+// Initialize OpenAI client lazily to avoid build-time throws when OPENAI_API_KEY is unset
+let _openaiInstance: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!_openaiInstance) {
+    _openaiInstance = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 3 });
+  }
+  return _openaiInstance;
+}
 
 // Embedding similarity thresholds for duplicate detection
 const DUPLICATE_THRESHOLD_CERTAIN = 0.82; // Auto-duplicate, no AI needed
@@ -140,7 +143,7 @@ Instead, evaluate whether the post contains or references REAL, newsworthy infor
     : "";
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
@@ -235,7 +238,7 @@ async function checkFreshness(
   // Try to extract date from URL or content using AI
   try {
     const now = new Date();
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
@@ -390,7 +393,7 @@ async function checkForDuplicates(
   let bestMatch: { id: number; similarity: number } | null = null;
 
   try {
-    const embeddingResponse = await openai.embeddings.create({
+    const embeddingResponse = await getOpenAI().embeddings.create({
       model: "text-embedding-3-small",
       input: contentText.substring(0, 8000),
     });
@@ -479,7 +482,7 @@ async function checkForDuplicates(
           .map((t, i) => `${i + 1}. [${t.source} #${t.id}] ${t.title}`)
           .join("\n");
 
-        const completion = await openai.chat.completions.create({
+        const completion = await getOpenAI().chat.completions.create({
           model: "gpt-4o-mini",
           messages: [
             {

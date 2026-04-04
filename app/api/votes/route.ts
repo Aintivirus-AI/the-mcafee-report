@@ -42,9 +42,11 @@ setInterval(() => {
  * Uses IP + User-Agent + Accept-Language + a server-side salt to make
  * the hash resistant to spoofing any single header.
  */
-const VOTER_HASH_SALT = process.env.VOTER_HASH_SALT || process.env.API_SECRET_KEY || "default-voter-salt";
-
 function getVoterHash(request: NextRequest): string {
+  const salt = process.env.VOTER_HASH_SALT;
+  if (!salt) {
+    throw new Error("VOTER_HASH_SALT env var is required");
+  }
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     request.headers.get("x-real-ip") ||
@@ -54,7 +56,7 @@ function getVoterHash(request: NextRequest): string {
   const encoding = request.headers.get("accept-encoding") || "unknown";
   return crypto
     .createHash("sha256")
-    .update(`${VOTER_HASH_SALT}:${ip}:${ua}:${lang}:${encoding}`)
+    .update(`${salt}:${ip}:${ua}:${lang}:${encoding}`)
     .digest("hex");
 }
 

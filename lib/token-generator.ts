@@ -2,7 +2,7 @@
  * Token metadata generation: meme-ified article images + dumb literal naming.
  *
  * Image strategy (in priority order):
- *   1. Download the article's OG image → pass to openai.images.edit() to
+ *   1. Download the article's OG image → pass to getOpenAI().images.edit() to
  *      meme-ify it (deep-fry, exaggerate, add surreal elements)
  *   2. If no article image or edit fails → generate a deliberately crude
  *      shitpost-tier AI image from scratch
@@ -20,9 +20,13 @@ import { saveImageBuffer } from "./image-store";
 import type { TokenMetadata, PageContent } from "./types";
 import { sanitizeForPrompt, safeFetch } from "./url-validator";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let _openaiInstance: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!_openaiInstance) {
+    _openaiInstance = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return _openaiInstance;
+}
 
 // Configuration
 const MAX_TICKER_ATTEMPTS = 5;
@@ -131,7 +135,7 @@ Respond with JSON only:
     attempts++;
 
     try {
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAI().chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: systemPrompt },
@@ -236,7 +240,7 @@ async function resolveCustomImage(headline: string, localPath: string, memeify: 
 }
 
 /**
- * Meme-ify a locally stored image via openai.images.edit().
+ * Meme-ify a locally stored image via getOpenAI().images.edit().
  * Reads the image from disk instead of downloading from a URL.
  */
 async function memeifyLocalImage(headline: string, localPath: string): Promise<string | null> {
@@ -277,7 +281,7 @@ The news headline: "${safeHeadline}"`;
   try {
     const imageFile = await toFile(imageBuffer, "custom.png", { type: "image/png" });
 
-    const response = await openai.images.edit({
+    const response = await getOpenAI().images.edit({
       model: "gpt-image-1",
       image: imageFile,
       prompt: editPrompt,
@@ -326,7 +330,7 @@ async function generateTokenLogo(headline: string, content: PageContent): Promis
 }
 
 /**
- * Download the article's OG image and meme-ify it via openai.images.edit().
+ * Download the article's OG image and meme-ify it via getOpenAI().images.edit().
  * Returns the local image path or null on failure.
  */
 async function memeifyArticleImage(headline: string, imageUrl: string): Promise<string | null> {
@@ -357,7 +361,7 @@ async function memeifyArticleImage(headline: string, imageUrl: string): Promise<
     return null;
   }
 
-  // Step 2: Pass to openai.images.edit() with meme-ification prompt
+  // Step 2: Pass to getOpenAI().images.edit() with meme-ification prompt
   const safeHeadline = sanitizeForPrompt(headline, 100);
 
   const editPrompt = `Take this news image and turn it into a viral pump.fun memecoin profile picture.
@@ -378,7 +382,7 @@ The news headline: "${safeHeadline}"`;
     // Convert buffer to a File-like object for the SDK
     const imageFile = await toFile(imageBuffer, "article.png", { type: "image/png" });
 
-    const response = await openai.images.edit({
+    const response = await getOpenAI().images.edit({
       model: "gpt-image-1",
       image: imageFile,
       prompt: editPrompt,
@@ -431,7 +435,7 @@ RULES:
 - The vibe: if a degen scrolling pump.fun at 3am saw this thumbnail, they'd stop and click`;
 
   try {
-    const response = await openai.images.generate({
+    const response = await getOpenAI().images.generate({
       model: "gpt-image-1",
       prompt,
       n: 1,
@@ -548,7 +552,7 @@ RULES:
 - Eye-catching and scroll-stopping`;
 
   try {
-    const response = await openai.images.generate({
+    const response = await getOpenAI().images.generate({
       model: "gpt-image-1",
       prompt,
       n: 1,
@@ -591,7 +595,7 @@ async function generateTokenDescription(
   console.log(`[TokenGenerator] Generating description for: "${headline}"`);
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
@@ -626,7 +630,7 @@ async function generateTokenDescription(
  */
 export async function generateTokenName(headline: string): Promise<string> {
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
@@ -662,7 +666,7 @@ export async function generateTicker(name: string): Promise<string> {
     attempts++;
 
     try {
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAI().chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
           {

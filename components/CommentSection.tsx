@@ -93,8 +93,10 @@ export function CommentSection({ headlineId }: { headlineId: number }) {
   // Load Telegram Login Widget script
   useEffect(() => {
     if (user || !loginRef.current) return;
-    // Clear previous
-    loginRef.current.innerHTML = "";
+    // Clear previous (avoid innerHTML to prevent XSS footgun)
+    while (loginRef.current.firstChild) {
+      loginRef.current.removeChild(loginRef.current.firstChild);
+    }
     const script = document.createElement("script");
     script.src = "https://telegram.org/js/telegram-widget.js?22";
     script.setAttribute("data-telegram-login", BOT_NAME);

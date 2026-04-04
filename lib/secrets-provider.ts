@@ -145,7 +145,13 @@ function decryptFromEnv(): string {
     );
   }
 
-  return decryptPrivateKey(encryptedKey, encryptionKey || "");
+  if (!encryptionKey) {
+    throw new Error(
+      "WALLET_ENCRYPTION_KEY env var is required when WALLET_SECRET_PROVIDER=encrypted"
+    );
+  }
+
+  return decryptPrivateKey(encryptedKey, encryptionKey);
 }
 
 // ---------------------------------------------------------------------------

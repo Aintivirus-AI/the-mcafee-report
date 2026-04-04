@@ -83,6 +83,13 @@ function pruneCache() {
       audioCache.delete(key);
     }
   }
+  // Alert on high heap usage to catch memory pressure from large ArrayBuffers
+  const { heapUsed, heapTotal } = process.memoryUsage();
+  if (heapUsed / heapTotal > 0.85) {
+    console.warn(
+      `[API /tts] High heap usage: ${Math.round(heapUsed / 1024 / 1024)}MB / ${Math.round(heapTotal / 1024 / 1024)}MB`
+    );
+  }
 }
 
 export async function POST(request: NextRequest) {

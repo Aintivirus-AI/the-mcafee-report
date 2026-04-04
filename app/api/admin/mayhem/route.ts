@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSetting, setSetting } from "@/lib/db";
 import { safeCompare } from "@/lib/auth";
 
-const API_KEY = process.env.SCHEDULER_API_KEY || process.env.API_KEY || "";
+const API_KEY = process.env.SCHEDULER_API_KEY || process.env.API_KEY;
 
 function isAuthorized(request: NextRequest): boolean {
   if (!API_KEY) return false;

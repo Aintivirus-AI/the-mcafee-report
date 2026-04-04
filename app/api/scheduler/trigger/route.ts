@@ -35,6 +35,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Defense-in-depth: reject browser-originated cross-origin requests
+  const origin = request.headers.get("origin");
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  if (origin && siteUrl && origin !== siteUrl) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   // Accept action from query param or JSON body
   let action = request.nextUrl.searchParams.get("action") || "cycle";
 

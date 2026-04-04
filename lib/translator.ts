@@ -5,9 +5,13 @@
 
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+let _openaiInstance: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!_openaiInstance) {
+    _openaiInstance = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return _openaiInstance;
+}
 
 interface TranslationResult {
   title: string;
@@ -40,7 +44,7 @@ export async function ensureEnglish(
   }
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.1,
       max_tokens: 600,

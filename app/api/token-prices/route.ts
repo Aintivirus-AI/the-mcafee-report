@@ -57,7 +57,8 @@ const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 const RATE_LIMIT_MAX = 30; // 30 requests per minute
 
 function isRateLimited(request: NextRequest): boolean {
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const rawIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const ip = (rawIp && rawIp.length > 0) ? rawIp : "unknown";
   const now = Date.now();
   const entry = rateLimitMap.get(ip);
 

@@ -212,27 +212,27 @@ export function monitorWalletForIncoming(
   subscriptionId = connection.onAccountChange(
     wallet.publicKey,
     async (accountInfo, context) => {
-      console.log(`[Wallet] Account change detected in slot ${context.slot}`);
-      
-      // Get recent transactions to find the incoming one
       try {
+        console.log(`[Wallet] Account change detected in slot ${context.slot}`);
+
+        // Get recent transactions to find the incoming one
         const signatures = await connection.getSignaturesForAddress(
           wallet.publicKey,
           { limit: 1 }
         );
-        
+
         if (signatures.length > 0) {
           const sig = signatures[0];
           // Get transaction details to find the amount
           const tx = await connection.getTransaction(sig.signature, {
             commitment: "confirmed",
           });
-          
+
           if (tx && tx.meta) {
             const preBalance = tx.meta.preBalances[0];
             const postBalance = tx.meta.postBalances[0];
             const lamportsDiff = postBalance - preBalance;
-            
+
             if (lamportsDiff > 0) {
               onTransaction(sig.signature, lamportsDiff);
             }

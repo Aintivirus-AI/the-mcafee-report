@@ -85,13 +85,11 @@ function verifyWebhook(request: NextRequest): boolean {
   }
 
   const authHeader = request.headers.get("authorization");
-  if (!authHeader) return false;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) return false;
 
-  // Timing-safe comparison to prevent brute-force via side-channels
-  return (
-    safeCompare(authHeader, webhookSecret) ||
-    safeCompare(authHeader, `Bearer ${webhookSecret}`)
-  );
+  // Extract token after "Bearer " prefix, then do a single timing-safe comparison
+  const token = authHeader.slice(7);
+  return safeCompare(token, webhookSecret);
 }
 
 /**

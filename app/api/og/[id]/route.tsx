@@ -26,7 +26,7 @@ export async function GET(
     return new Response("Not found", { status: 404 });
   }
 
-  const votes = getVoteCounts(headlineId);
+  const votes = getVoteCounts(headlineId) ?? { wagmi: 0, ngmi: 0 };
   const totalVotes = votes.wagmi + votes.ngmi;
   const wagmiPercent = totalVotes > 0 ? Math.round((votes.wagmi / totalVotes) * 100) : 50;
 
