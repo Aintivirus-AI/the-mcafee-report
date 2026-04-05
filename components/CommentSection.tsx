@@ -65,25 +65,12 @@ export function CommentSection({ headlineId }: { headlineId: number }) {
     fetchComments();
   }, [fetchComments]);
 
-  // Restore auth from sessionStorage
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem("tg_auth");
-      if (saved) setUser(JSON.parse(saved));
-    } catch {
-      // Ignore
-    }
-  }, []);
-
   // Set up Telegram Login Widget callback
+  // Auth data is kept only in React state — never written to sessionStorage,
+  // which is readable by any JS running on the page (XSS risk).
   useEffect(() => {
     window.onTelegramAuth = (authUser: TelegramAuthData) => {
       setUser(authUser);
-      try {
-        sessionStorage.setItem("tg_auth", JSON.stringify(authUser));
-      } catch {
-        // Ignore
-      }
     };
     return () => {
       delete window.onTelegramAuth;

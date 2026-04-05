@@ -73,6 +73,15 @@ interface SessionData {
 
 type MyContext = Context & SessionFlavor<SessionData>;
 
+/**
+ * Sanitize user-controlled strings before logging.
+ * Escapes newlines and control characters to prevent log injection attacks
+ * where an attacker inserts fake log lines to obscure malicious activity.
+ */
+function sanitizeForLog(value: string): string {
+  return value.replace(/[\r\n\t\x00-\x1f\x7f]/g, (ch) => `\\x${ch.charCodeAt(0).toString(16).padStart(2, "0")}`);
+}
+
 // Environment variables
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const API_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
@@ -365,23 +374,23 @@ async function fetchRegularPageContent(url: string): Promise<{ title: string; de
     if (!isBotGarbageTitle(result.title)) {
       return result;
     }
-    console.warn(`[Bot] Direct fetch returned garbage for ${url}: "${result.title}"`);
+    console.warn(`[Bot] Direct fetch returned garbage for ${sanitizeForLog(url)}: "${sanitizeForLog(result.title)}"`);
   } catch (error) {
-    console.warn(`[Bot] Direct fetch failed for ${url}:`, error);
+    console.warn(`[Bot] Direct fetch failed for ${sanitizeForLog(url)}:`, error);
   }
 
   // Attempt 2: Social media crawler (most reliable — sites serve content to Facebook's crawler)
   try {
-    console.log(`[Bot] Trying social media crawler for ${url}`);
+    console.log(`[Bot] Trying social media crawler for ${sanitizeForLog(url)}`);
     const html = await safeFetchText(url, { headers: SOCIAL_CRAWLER_HEADERS, timeoutMs: 15_000 });
     const result = extractFromHtml(html);
     if (!isBotGarbageTitle(result.title)) {
-      console.log(`[Bot] Social crawler hit for ${url}: "${result.title}"`);
+      console.log(`[Bot] Social crawler hit for ${sanitizeForLog(url)}: "${sanitizeForLog(result.title)}"`);
       return result;
     }
-    console.warn(`[Bot] Social crawler returned garbage for ${url}: "${result.title}"`);
+    console.warn(`[Bot] Social crawler returned garbage for ${sanitizeForLog(url)}: "${sanitizeForLog(result.title)}"`);
   } catch (error) {
-    console.warn(`[Bot] Social crawler failed for ${url}:`, error);
+    console.warn(`[Bot] Social crawler failed for ${sanitizeForLog(url)}:`, error);
   }
 
   // Attempt 3: Google webcache

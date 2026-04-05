@@ -37,7 +37,9 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
-const HASH_SALT = process.env.VISITOR_HASH_SALT || process.env.API_SECRET_KEY || "default-pageview-salt";
+// Use a dedicated salt for visitor hashing — must not fall back to API_SECRET_KEY
+// to preserve key separation between authentication and deduplication hashing.
+const HASH_SALT = process.env.VISITOR_HASH_SALT || "default-pageview-salt";
 
 function getVisitorHash(request: NextRequest): string {
   const ip =

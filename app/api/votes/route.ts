@@ -159,16 +159,22 @@ export async function POST(request: NextRequest) {
     }
 
     const voterHash = getVoterHash(request);
-    const success = castVote(headlineId, vote_type, voterHash);
+    // castVote returns false only for duplicate votes; throws on DB errors
+    let success: boolean;
+    try {
+      success = castVote(headlineId, vote_type, voterHash);
+    } catch (dbError) {
+      console.error("[API /votes] Database error:", dbError);
+      return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    }
 
     if (!success) {
-      // Already voted — return current counts anyway
+      // Already voted (UNIQUE constraint) — return current counts with 409
       const counts = getVoteCounts(headlineId);
-      return NextResponse.json({
-        ...counts,
-        voted: vote_type,
-        already_voted: true,
-      });
+      return NextResponse.json(
+        { ...counts, voted: vote_type, already_voted: true },
+        { status: 409 }
+      );
     }
 
     // Log the vote to the activity feed

@@ -30,4 +30,15 @@ describe("safeCompare", () => {
   it("returns true for empty vs empty", () => {
     expect(safeCompare("", "")).toBe(true);
   });
+
+  // Regression: old implementation returned false early when lengths differed,
+  // leaking the secret length via timing. New implementation pads to equal length
+  // before calling timingSafeEqual so it always takes constant time.
+  it("rejects a prefix of the correct secret (length-mismatch path)", () => {
+    expect(safeCompare("secret-key", "secret-key-extra")).toBe(false);
+  });
+
+  it("rejects when correct secret is a prefix of the supplied value", () => {
+    expect(safeCompare("secret-key-extra", "secret-key")).toBe(false);
+  });
 });

@@ -77,9 +77,9 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const { id, status, rejectionReason } = body;
 
-    if (!id || !status) {
+    if (!Number.isInteger(id) || id <= 0 || !status) {
       return NextResponse.json(
-        { success: false, error: "id and status are required" },
+        { success: false, error: "id must be a positive integer and status is required" },
         { status: 400 }
       );
     }
@@ -115,10 +115,7 @@ export async function PATCH(request: NextRequest) {
     const validTransitions = VALID_STATUS_TRANSITIONS[currentStatus] || [];
     if (!validTransitions.includes(status as SubmissionStatus)) {
       return NextResponse.json(
-        {
-          success: false,
-          error: `Invalid transition: '${currentStatus}' -> '${status}'. Valid next states: ${validTransitions.join(", ") || "none (terminal state)"}`,
-        },
+        { success: false, error: "Invalid status transition" },
         { status: 400 }
       );
     }

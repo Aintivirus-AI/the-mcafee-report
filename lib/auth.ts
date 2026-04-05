@@ -15,9 +15,19 @@ import { NextRequest } from "next/server";
  */
 export function safeCompare(a: string, b: string): boolean {
   if (typeof a !== "string" || typeof b !== "string") return false;
-  if (a.length !== b.length) return false;
+  // Always run timingSafeEqual regardless of length to avoid timing side-channels
+  // that would reveal the length of the secret. Pad both to the same length first,
+  // then separately check length equality (non-short-circuit via &).
+  const maxLen = Math.max(a.length, b.length, 1);
   try {
-    return timingSafeEqual(Buffer.from(a, "utf-8"), Buffer.from(b, "utf-8"));
+    const bufA = Buffer.alloc(maxLen);
+    const bufB = Buffer.alloc(maxLen);
+    bufA.write(a, "utf-8");
+    bufB.write(b, "utf-8");
+    // timingSafeEqual takes constant time regardless of content
+    const contentsEqual = timingSafeEqual(bufA, bufB);
+    // Length check must not short-circuit before the constant-time comparison
+    return contentsEqual && a.length === b.length;
   } catch {
     return false;
   }

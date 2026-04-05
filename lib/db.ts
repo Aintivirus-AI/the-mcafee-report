@@ -1632,9 +1632,13 @@ export function castVote(
     `);
     const result = stmt.run(headlineId, voteType, voterHash);
     return result.changes > 0;
-  } catch {
-    // UNIQUE constraint violation = already voted
-    return false;
+  } catch (error) {
+    // Only swallow UNIQUE constraint violations (already voted).
+    // Re-throw all other errors so the caller can return HTTP 500.
+    if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+      return false;
+    }
+    throw error;
   }
 }
 
