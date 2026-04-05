@@ -3,12 +3,10 @@ const nextConfig = {
   // Enable server-side features for better-sqlite3
   serverExternalPackages: ['better-sqlite3'],
 
-  // Allow external images for next/image optimization
-  // Explicit allowlist — wildcard hostname enables SSRF/open-proxy abuse
+  // Allow external HTTPS images for article thumbnails (og:image from news sites)
   images: {
     remotePatterns: [
-      { protocol: 'https', hostname: 'oaidalleapiprodscus.blob.core.windows.net' },
-      { protocol: 'https', hostname: 'api.dicebear.com' },
+      { protocol: 'https', hostname: '**' },
     ],
   },
 
