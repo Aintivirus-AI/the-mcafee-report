@@ -50,16 +50,29 @@ function isSignatureProcessed(signature: string): boolean {
 }
 
 function markSignatureProcessed(signature: string): void {
-  processedSignatures.set(signature, Date.now());
-  // Prune old entries if the map grows too large
-  if (processedSignatures.size > MAX_PROCESSED_SIGNATURES) {
+  // Enforce cap eagerly before inserting to prevent unbounded growth
+  if (processedSignatures.size >= MAX_PROCESSED_SIGNATURES) {
     const now = Date.now();
+    // Evict expired entries first
     for (const [sig, ts] of processedSignatures) {
       if (now - ts > SIGNATURE_TTL_MS) {
         processedSignatures.delete(sig);
       }
     }
+    // If still at cap, evict the single oldest entry (circular-buffer behaviour)
+    if (processedSignatures.size >= MAX_PROCESSED_SIGNATURES) {
+      let oldestSig = "";
+      let oldestTs = Infinity;
+      for (const [sig, ts] of processedSignatures) {
+        if (ts < oldestTs) {
+          oldestTs = ts;
+          oldestSig = sig;
+        }
+      }
+      if (oldestSig) processedSignatures.delete(oldestSig);
+    }
   }
+  processedSignatures.set(signature, Date.now());
 }
 
 // Periodically evict expired signatures to prevent unbounded growth between bursts

@@ -275,10 +275,13 @@ export async function safeFetch(
 
         // Check Content-Length if available
         const contentLength = redirectResponse.headers.get("content-length");
-        if (contentLength && parseInt(contentLength, 10) > maxBytes) {
-          throw new Error(
-            `Response too large: ${contentLength} bytes (max ${maxBytes})`
-          );
+        if (contentLength) {
+          const clLen = parseInt(contentLength, 10);
+          if (!Number.isFinite(clLen) || clLen > maxBytes) {
+            throw new Error(
+              `Response too large: ${contentLength} bytes (max ${maxBytes})`
+            );
+          }
         }
 
         return redirectResponse;
@@ -289,10 +292,13 @@ export async function safeFetch(
 
     // Check Content-Length if available
     const contentLength = response.headers.get("content-length");
-    if (contentLength && parseInt(contentLength, 10) > maxBytes) {
-      throw new Error(
-        `Response too large: ${contentLength} bytes (max ${maxBytes})`
-      );
+    if (contentLength) {
+      const clLen = parseInt(contentLength, 10);
+      if (!Number.isFinite(clLen) || clLen > maxBytes) {
+        throw new Error(
+          `Response too large: ${contentLength} bytes (max ${maxBytes})`
+        );
+      }
     }
 
     return response;

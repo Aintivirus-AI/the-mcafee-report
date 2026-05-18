@@ -35,10 +35,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Defense-in-depth: reject browser-originated cross-origin requests
+  // Defense-in-depth: reject browser-originated cross-origin requests.
+  // If siteUrl is not configured, deny any request that carries an Origin header
+  // rather than silently skipping the check.
   const origin = request.headers.get("origin");
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
-  if (origin && siteUrl && origin !== siteUrl) {
+  if (origin && (!siteUrl || origin !== siteUrl)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

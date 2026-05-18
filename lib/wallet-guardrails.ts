@@ -104,6 +104,9 @@ export function checkSendGuardrails(
   // 4. Daily spending limit
   const dailyOutflow = getDailyOutflowLamports();
   const maxDaily = getMaxDailyLamports();
+  if (!Number.isSafeInteger(dailyOutflow + lamports)) {
+    throw new Error("Amount overflow");
+  }
   if (dailyOutflow + lamports > maxDaily) {
     const reason =
       `Daily spending limit would be exceeded: ` +

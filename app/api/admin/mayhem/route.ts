@@ -39,7 +39,13 @@ export async function POST(request: NextRequest) {
     const enabled = Boolean(body.enabled);
     setSetting("mayhem_mode", enabled ? "on" : "off");
 
-    console.log(`[Admin] Mayhem mode ${enabled ? "ENABLED" : "DISABLED"}`);
+    const callerIp =
+      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      request.headers.get("x-real-ip") ||
+      "unknown";
+    console.log(
+      `[Admin] Mayhem mode ${enabled ? "ENABLED" : "DISABLED"} — caller_ip=${callerIp} timestamp=${new Date().toISOString()}`
+    );
 
     return NextResponse.json({ enabled, message: `Mayhem mode ${enabled ? "enabled" : "disabled"}` });
   } catch (error) {

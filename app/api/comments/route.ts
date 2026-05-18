@@ -54,8 +54,11 @@ export async function POST(request: NextRequest) {
   try {
     // Reject oversized payloads before parsing to prevent memory exhaustion
     const contentLength = request.headers.get("content-length");
-    if (contentLength && parseInt(contentLength, 10) > 1_000_000) {
-      return NextResponse.json({ error: "Request too large" }, { status: 413 });
+    if (contentLength) {
+      const len = parseInt(contentLength, 10);
+      if (len <= 0 || len > 1_000_000) {
+        return NextResponse.json({ error: "Request too large" }, { status: 413 });
+      }
     }
 
     const body = await request.json();

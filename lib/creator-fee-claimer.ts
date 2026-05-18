@@ -80,7 +80,7 @@ async function getClaimedLamportsFromTx(
       return 0;
     }
 
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** attempt, 30000) + Math.random() * 500));
   }
   return 0;
 }

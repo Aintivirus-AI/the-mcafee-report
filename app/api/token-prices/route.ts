@@ -55,6 +55,7 @@ function evictCache() {
 const rateLimitMap = new Map<string, { count: number; windowStart: number }>();
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 const RATE_LIMIT_MAX = 30; // 30 requests per minute
+const MAX_RATE_LIMIT_ENTRIES = 10_000;
 
 function isRateLimited(request: NextRequest): boolean {
   const rawIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
@@ -63,6 +64,11 @@ function isRateLimited(request: NextRequest): boolean {
   const entry = rateLimitMap.get(ip);
 
   if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    // Evict oldest entry when at capacity to bound memory usage
+    if (rateLimitMap.size >= MAX_RATE_LIMIT_ENTRIES) {
+      const oldestKey = rateLimitMap.keys().next().value;
+      if (oldestKey !== undefined) rateLimitMap.delete(oldestKey);
+    }
     rateLimitMap.set(ip, { count: 1, windowStart: now });
     return false;
   }

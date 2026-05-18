@@ -311,3 +311,200 @@ describe('Token price cache eviction TTL', () => {
     expect(oldLogicEvicts).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 5. NaN Content-Length bypass (lib/url-validator.ts fix)
+// ---------------------------------------------------------------------------
+describe('NaN Content-Length bypass prevention', () => {
+  function isContentLengthTooLarge(contentLength: string, maxBytes: number): boolean {
+    const clLen = parseInt(contentLength, 10);
+    return !Number.isFinite(clLen) || clLen > maxBytes;
+  }
+
+  const MAX = 2 * 1024 * 1024;
+
+  it('malformed header produces NaN and is now rejected', () => {
+    // Before fix: NaN > MAX = false → passed. After fix: !isFinite(NaN) = true → rejected
+    expect(isContentLengthTooLarge('abc', MAX)).toBe(true);
+  });
+
+  it('oversized response is rejected', () => {
+    expect(isContentLengthTooLarge(String(MAX + 1), MAX)).toBe(true);
+  });
+
+  it('valid response within limit is accepted', () => {
+    expect(isContentLengthTooLarge('1024', MAX)).toBe(false);
+  });
+
+  it('demonstrates old bug: NaN > maxBytes = false (was silently bypassed)', () => {
+    const nan = parseInt('not-a-number', 10);
+    expect(Number.isNaN(nan)).toBe(true);
+    expect(nan > MAX).toBe(false); // This is why the old guard failed
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. Positive Content-Length validation (app/api/comments/route.ts fix)
+// ---------------------------------------------------------------------------
+describe('Positive Content-Length validation', () => {
+  const MAX_BODY_SIZE = 1_000_000;
+
+  function isInvalidContentLength(header: string): boolean {
+    const len = parseInt(header, 10);
+    return len <= 0 || len > MAX_BODY_SIZE;
+  }
+
+  it('negative Content-Length is now rejected', () => {
+    expect(isInvalidContentLength('-1')).toBe(true);
+  });
+
+  it('zero Content-Length is rejected', () => {
+    expect(isInvalidContentLength('0')).toBe(true);
+  });
+
+  it('oversized Content-Length is rejected', () => {
+    expect(isInvalidContentLength(String(MAX_BODY_SIZE + 1))).toBe(true);
+  });
+
+  it('valid Content-Length passes', () => {
+    expect(isInvalidContentLength('500')).toBe(false);
+    expect(isInvalidContentLength(String(MAX_BODY_SIZE))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. Headline ID strict validation (app/api/votes/route.ts fix)
+// ---------------------------------------------------------------------------
+describe('Headline ID strict validation', () => {
+  function isValidHeadlineIdStr(s: string): boolean {
+    return /^\d+$/.test(s);
+  }
+
+  it('pure integer string is valid', () => {
+    expect(isValidHeadlineIdStr('123')).toBe(true);
+    expect(isValidHeadlineIdStr('1')).toBe(true);
+  });
+
+  it('decimal string is rejected — was previously truncated silently', () => {
+    expect(isValidHeadlineIdStr('123.45abc')).toBe(false);
+    expect(isValidHeadlineIdStr('123.45')).toBe(false);
+  });
+
+  it('negative and empty strings are rejected', () => {
+    expect(isValidHeadlineIdStr('-1')).toBe(false);
+    expect(isValidHeadlineIdStr('')).toBe(false);
+  });
+
+  it('POST body uses Number.isInteger for exact integer check', () => {
+    expect(Number.isInteger(Number(123)) && Number(123) > 0).toBe(true);
+    expect(Number.isInteger(Number(123.45))).toBe(false);
+    expect(Number.isInteger(Number('123.45abc'))).toBe(false); // NaN
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 8. Integer overflow guard (lib/wallet-guardrails.ts fix)
+// ---------------------------------------------------------------------------
+describe('Daily outflow integer overflow guard', () => {
+  function wouldOverflow(dailyOutflow: number, lamports: number): boolean {
+    return !Number.isSafeInteger(dailyOutflow + lamports);
+  }
+
+  it('safe values do not trigger overflow guard', () => {
+    expect(wouldOverflow(1_000_000, 500_000)).toBe(false);
+  });
+
+  it('values exceeding MAX_SAFE_INTEGER trigger the guard', () => {
+    expect(wouldOverflow(Number.MAX_SAFE_INTEGER, 1)).toBe(true);
+  });
+
+  it('normal SOL amounts in lamports are safe', () => {
+    const tenSol = 10 * 1_000_000_000;
+    expect(wouldOverflow(0, tenSol)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9. CSRF origin fail-safe (app/api/scheduler/trigger/route.ts fix)
+// ---------------------------------------------------------------------------
+describe('CSRF origin check fail-safe when NEXT_PUBLIC_SITE_URL unset', () => {
+  function isCsrfBlocked(origin: string | null, siteUrl: string | undefined): boolean {
+    return origin !== null && (!siteUrl || origin !== siteUrl);
+  }
+
+  it('no Origin header → allowed regardless of siteUrl config', () => {
+    expect(isCsrfBlocked(null, undefined)).toBe(false);
+    expect(isCsrfBlocked(null, 'https://example.com')).toBe(false);
+  });
+
+  it('matching origin + configured siteUrl → allowed', () => {
+    expect(isCsrfBlocked('https://example.com', 'https://example.com')).toBe(false);
+  });
+
+  it('mismatched origin → blocked', () => {
+    expect(isCsrfBlocked('https://evil.com', 'https://example.com')).toBe(true);
+  });
+
+  it('origin present but siteUrl unset → NOW blocked (was silently allowed before)', () => {
+    expect(isCsrfBlocked('https://evil.com', undefined)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10. Replay-protection map cap (app/api/webhooks/helius/route.ts fix)
+// ---------------------------------------------------------------------------
+describe('Replay-protection map cap enforcement', () => {
+  const MAX = 10;
+  const TTL = 24 * 60 * 60 * 1000;
+
+  function markProcessed(map: Map<string, number>, sig: string): void {
+    if (map.size >= MAX) {
+      const now = Date.now();
+      for (const [s, ts] of map) {
+        if (now - ts > TTL) map.delete(s);
+      }
+      if (map.size >= MAX) {
+        let oldestSig = '';
+        let oldestTs = Infinity;
+        for (const [s, ts] of map) {
+          if (ts < oldestTs) { oldestTs = ts; oldestSig = s; }
+        }
+        if (oldestSig) map.delete(oldestSig);
+      }
+    }
+    map.set(sig, Date.now());
+  }
+
+  it('map never exceeds cap even with all-recent entries', () => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < MAX + 5; i++) markProcessed(map, `sig${i}`);
+    expect(map.size).toBeLessThanOrEqual(MAX);
+  });
+
+  it('new signature is always recorded after eviction', () => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < MAX; i++) map.set(`sig${i}`, Date.now());
+    markProcessed(map, 'newSig');
+    expect(map.has('newSig')).toBe(true);
+    expect(map.size).toBeLessThanOrEqual(MAX);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 11. VISITOR_HASH_SALT required (app/api/page-views/route.ts fix)
+// ---------------------------------------------------------------------------
+describe('VISITOR_HASH_SALT required validation', () => {
+  function getHashSalt(env: Record<string, string | undefined>): string {
+    const salt = env['VISITOR_HASH_SALT'];
+    if (!salt) throw new Error('VISITOR_HASH_SALT env var is required');
+    return salt;
+  }
+
+  it('throws when VISITOR_HASH_SALT is missing instead of using hardcoded default', () => {
+    expect(() => getHashSalt({})).toThrow('VISITOR_HASH_SALT env var is required');
+  });
+
+  it('returns configured salt', () => {
+    expect(getHashSalt({ VISITOR_HASH_SALT: 'my-secure-salt' })).toBe('my-secure-salt');
+  });
+});

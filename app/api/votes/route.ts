@@ -27,15 +27,18 @@ function checkVoteRateLimit(key: string): boolean {
   return true;
 }
 
-// Periodically clean up stale vote rate limit entries
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of voteRateLimitMap) {
-    if (now - entry.windowStart > VOTE_RATE_LIMIT_WINDOW_MS * 2) {
-      voteRateLimitMap.delete(key);
+// Singleton guard: prevent multiple overlapping cleanup timers on module reload
+let _voteCleanupTimer: NodeJS.Timeout | null = null;
+if (!_voteCleanupTimer) {
+  _voteCleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of voteRateLimitMap) {
+      if (now - entry.windowStart > VOTE_RATE_LIMIT_WINDOW_MS * 2) {
+        voteRateLimitMap.delete(key);
+      }
     }
-  }
-}, 5 * 60 * 1000);
+  }, 5 * 60 * 1000);
+}
 
 /**
  * Create a voter hash from multiple signals for dedup without storing PII.
@@ -91,13 +94,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const headlineId = parseInt(headlineIdStr, 10);
-    if (isNaN(headlineId)) {
+    if (!/^\d+$/.test(headlineIdStr)) {
       return NextResponse.json(
         { error: "Invalid headline_id" },
         { status: 400 }
       );
     }
+    const headlineId = parseInt(headlineIdStr, 10);
 
     const counts = getVoteCounts(headlineId);
 
@@ -150,8 +153,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const headlineId = parseInt(headline_id, 10);
-    if (isNaN(headlineId)) {
+    const headlineId = Number(headline_id);
+    if (!Number.isInteger(headlineId) || headlineId <= 0) {
       return NextResponse.json(
         { error: "Invalid headline_id" },
         { status: 400 }

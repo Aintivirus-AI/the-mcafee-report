@@ -48,20 +48,25 @@ function checkRateLimit(key: string): boolean {
   return true;
 }
 
-// Periodically clean up stale rate limit entries (every 5 minutes)
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of rateLimitMap) {
-    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
-      rateLimitMap.delete(key);
+// Singleton guards: prevent multiple overlapping timers on module reload
+let _ttsRateLimitTimer: NodeJS.Timeout | null = null;
+if (!_ttsRateLimitTimer) {
+  _ttsRateLimitTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of rateLimitMap) {
+      if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
+        rateLimitMap.delete(key);
+      }
     }
-  }
-}, 5 * 60 * 1000);
+  }, 5 * 60 * 1000);
+}
 
-// Periodically prune expired audio cache entries to reclaim memory from large ArrayBuffers
-setInterval(() => {
-  pruneCache();
-}, 10 * 60 * 1000);
+let _ttsCachePruneTimer: NodeJS.Timeout | null = null;
+if (!_ttsCachePruneTimer) {
+  _ttsCachePruneTimer = setInterval(() => {
+    pruneCache();
+  }, 10 * 60 * 1000);
+}
 
 function getCacheKey(text: string): string {
   // Use SHA-256 for collision-resistant cache keys

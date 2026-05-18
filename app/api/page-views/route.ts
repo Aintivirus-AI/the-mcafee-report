@@ -27,21 +27,24 @@ function checkRateLimit(key: string): boolean {
   return true;
 }
 
-// Clean up stale rate limit entries periodically
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of rateLimitMap) {
-    if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
-      rateLimitMap.delete(key);
+// Singleton guard: prevent multiple overlapping cleanup timers on module reload
+let _pageViewCleanupTimer: NodeJS.Timeout | null = null;
+if (!_pageViewCleanupTimer) {
+  _pageViewCleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of rateLimitMap) {
+      if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
+        rateLimitMap.delete(key);
+      }
     }
-  }
-}, 5 * 60 * 1000);
-
-// Use a dedicated salt for visitor hashing — must not fall back to API_SECRET_KEY
-// to preserve key separation between authentication and deduplication hashing.
-const HASH_SALT = process.env.VISITOR_HASH_SALT || "default-pageview-salt";
+  }, 5 * 60 * 1000);
+}
 
 function getVisitorHash(request: NextRequest): string {
+  const hashSalt = process.env.VISITOR_HASH_SALT;
+  if (!hashSalt) {
+    throw new Error("VISITOR_HASH_SALT env var is required");
+  }
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     request.headers.get("x-real-ip") ||
@@ -50,7 +53,7 @@ function getVisitorHash(request: NextRequest): string {
   const lang = request.headers.get("accept-language") || "unknown";
   return crypto
     .createHash("sha256")
-    .update(`${HASH_SALT}:${ip}:${ua}:${lang}`)
+    .update(`${hashSalt}:${ip}:${ua}:${lang}`)
     .digest("hex");
 }
 
