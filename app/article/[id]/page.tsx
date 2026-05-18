@@ -309,7 +309,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
             )}
 
             <p className="text-xs text-gray-500 mt-4 text-center">
-              50% of creator fees go to the submitter. 50% buy and burn $NEWS.
+              50% of creator fees go to the submitter.
             </p>
           </div>
         )}
@@ -451,21 +451,6 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
               Medium
             </a>
 
-            <span className="text-dark-200/50 select-none" aria-hidden="true">|</span>
-
-            {/* DexScreener */}
-            <a
-              href="https://pump.fun/coin/7Epmyp9dMD5SzUtxczbuWwsVARyWdzLFAkzxnvZWpump"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-neon-cyan transition-colors"
-              title="DexScreener"
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-              </svg>
-              DexScreener
-            </a>
           </div>
         </div>
       </div>
